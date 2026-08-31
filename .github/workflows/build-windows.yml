@@ -1,0 +1,26 @@
+name: Build Windows executable
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Run protocol tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Build and run packaged Qt self-test
+        shell: powershell
+        run: .\build_serial_console.ps1 -PythonPath python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SerialProtocolTester-windows-x64
+          path: dist/SerialProtocolTester.exe
+          if-no-files-found: error
