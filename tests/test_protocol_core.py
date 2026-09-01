@@ -20,6 +20,7 @@ from protocol_core import (  # noqa: E402
     load_protocol,
     localized_value,
     modbus_crc16,
+    resolve_follow_up_frame,
     split_framed_bytes,
     validate_protocol_data,
 )
@@ -32,7 +33,7 @@ class ProtocolCoreTests(unittest.TestCase):
 
     def test_sample_protocol_loads(self) -> None:
         self.assertEqual(self.protocol["schema_version"], "serial_protocol.v1")
-        self.assertEqual(len(self.protocol["commands"]), 3)
+        self.assertEqual(len(self.protocol["commands"]), 5)
 
     def test_modbus_crc_and_frame_append(self) -> None:
         request = self.protocol["commands"][0]["request"]
@@ -104,6 +105,20 @@ class ProtocolCoreTests(unittest.TestCase):
         protocol["commands"][1]["request"]["variables"][0]["step"] = 0
         errors = validate_protocol_data(protocol)
         self.assertTrue(any(".step must be a positive number" in error for error in errors))
+
+    def test_periodic_follow_up_resolves_passive_frame_simulation(self) -> None:
+        command = next(item for item in self.protocol["commands"] if item["id"] == "start_temperature_stream")
+        reply = command["follow_up_replies"][0]
+        frame = resolve_follow_up_frame(self.protocol, reply)
+        self.assertEqual(encode_frame(frame), b"TEMP,25.0\r\n")
+        self.assertEqual(frame["name"], "实时温度数据")
+
+    def test_periodic_follow_up_validation_rejects_missing_stream_id(self) -> None:
+        protocol = copy.deepcopy(self.protocol)
+        command = next(item for item in protocol["commands"] if item["id"] == "start_temperature_stream")
+        del command["follow_up_replies"][0]["stream_id"]
+        errors = validate_protocol_data(protocol)
+        self.assertTrue(any("stream_id is required" in error for error in errors))
 
 
 if __name__ == "__main__":

@@ -136,8 +136,11 @@ try {
         exit 0
     }
 
-    Write-Host "Starting application..." -ForegroundColor Green
-    Invoke-Checked $VenvPython @($AppPath) "Application"
+    Write-Host "Starting application with administrator rights..." -ForegroundColor Green
+    $ApplicationProcess = Start-Process -FilePath $VenvPython -ArgumentList @($AppPath) -Verb RunAs -Wait -PassThru
+    if ($ApplicationProcess.ExitCode -ne 0) {
+        throw "Application failed with exit code $($ApplicationProcess.ExitCode)"
+    }
     exit 0
 }
 catch {

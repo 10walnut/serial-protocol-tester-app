@@ -15,6 +15,7 @@ from virtual_ports import (  # noqa: E402
     build_install_arguments,
     count_unassigned_ports,
     find_setupc,
+    non_ports_class_names,
     normalize_com_name,
     parse_com0com_pnp_problems,
     virtual_ports_ready,
@@ -36,8 +37,8 @@ class VirtualPortTests(unittest.TestCase):
             build_install_arguments("COM10", "COM11"),
             [
                 "install",
-                "PortName=COM10",
-                "PortName=COM11",
+                "PortName=COM#,RealPortName=COM10",
+                "PortName=COM#,RealPortName=COM11",
             ],
         )
         with self.assertRaises(VirtualPortError):
@@ -70,7 +71,7 @@ Problem Code:               10 (0x0A) [CM_PROB_FAILED_START]
         incomplete = "CNCA0 PortName=COM#\nCNCB0 PortName=COM#,RealPortName=COM11"
         self.assertEqual(count_unassigned_ports(incomplete), 1)
         self.assertTrue(virtual_ports_ready("COM10", "COM11", ["COM10", "COM11"]))
-        self.assertTrue(
+        self.assertFalse(
             virtual_ports_ready(
                 "COM10",
                 "COM11",
@@ -79,6 +80,15 @@ Problem Code:               10 (0x0A) [CM_PROB_FAILED_START]
             )
         )
         self.assertFalse(virtual_ports_ready("COM10", "COM11", ["COM10"]))
+
+    def test_detects_direct_names_that_are_not_ports_class_devices(self) -> None:
+        output = (
+            "CNCA0 PortName=COM10\n"
+            "CNCB0 PortName=COM11\n"
+            "CNCA1 PortName=COM#,RealPortName=COM12\n"
+            "CNCB1 PortName=COM#,RealPortName=COM13"
+        )
+        self.assertEqual(non_ports_class_names(output), {"COM10", "COM11"})
 
 
 if __name__ == "__main__":

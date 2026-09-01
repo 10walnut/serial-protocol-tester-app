@@ -12,6 +12,8 @@ $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AppDir = Join-Path $RepoRoot "app"
 $AppPath = Join-Path $AppDir "serial_console.py"
 $SamplePath = Join-Path $AppDir "sample_protocol.json"
+$AssetsPath = Join-Path $AppDir "assets"
+$IconPath = Join-Path $AssetsPath "serial-protocol-tester-logo.ico"
 $RequirementsPath = Join-Path $AppDir "requirements.txt"
 $VenvDir = Join-Path $AppDir ".venv"
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
@@ -83,7 +85,7 @@ try {
     catch { Write-Warning "Could not start transcript logging: $($_.Exception.Message)" }
 
     Write-Host "Build Serial Protocol Tester" -ForegroundColor Cyan
-    foreach ($RequiredPath in @($AppPath, $SamplePath, $RequirementsPath)) {
+    foreach ($RequiredPath in @($AppPath, $SamplePath, $RequirementsPath, $AssetsPath, $IconPath)) {
         if (-not (Test-Path -LiteralPath $RequiredPath)) { throw "Required file is missing: $RequiredPath" }
     }
 
@@ -126,11 +128,13 @@ try {
     $ModeArgument = if ($OneDir) { "--onedir" } else { "--onefile" }
     $Separator = if ($env:OS -eq "Windows_NT") { ";" } else { ":" }
     $AddData = "$SamplePath$Separator."
+    $AddAssets = "$AssetsPath$Separator" + "assets"
     $Arguments = @(
         "-m", "PyInstaller",
         "--noconfirm",
         "--clean",
         "--windowed",
+        "--icon", $IconPath,
         $ModeArgument,
         "--name", $AppName,
         "--distpath", $StagingRoot,
@@ -138,6 +142,7 @@ try {
         "--specpath", $SpecRoot,
         "--collect-submodules", "serial",
         "--add-data", $AddData,
+        "--add-data", $AddAssets,
         $AppPath
     )
     $PythonBase = (& $VenvPython -c "import sys; print(sys.base_prefix)").Trim()

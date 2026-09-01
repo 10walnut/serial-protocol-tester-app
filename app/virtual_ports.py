@@ -10,7 +10,10 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-COM0COM_DOWNLOAD_URL = "https://sourceforge.net/projects/com0com/"
+COM0COM_DOWNLOAD_URL = (
+    "https://sourceforge.net/projects/com0com/files/com0com/3.0.0.0/"
+    "com0com-3.0.0.0-i386-and-x64-signed.zip/download"
+)
 COMMON_SETUPC_PATHS = (
     Path(r"C:\Program Files\com0com\setupc.exe"),
     Path(r"C:\Program Files (x86)\com0com\setupc.exe"),
@@ -47,8 +50,8 @@ def build_install_arguments(port_a: str | int, port_b: str | int) -> list[str]:
         raise VirtualPortError("The two virtual ports must use different COM numbers")
     return [
         "install",
-        f"PortName={first}",
-        f"PortName={second}",
+        f"PortName=COM#,RealPortName={first}",
+        f"PortName=COM#,RealPortName={second}",
     ]
 
 
@@ -105,6 +108,16 @@ def count_unassigned_ports(output: str) -> int:
     )
 
 
+def non_ports_class_names(output: str) -> set[str]:
+    """Return direct PortName values that do not use the Windows Ports class installer."""
+    names: set[str] = set()
+    for line in output.splitlines():
+        direct = re.search(r"\bPortName=(COM\d+)\b", line, re.IGNORECASE)
+        if direct and not re.search(r"\bRealPortName=COM\d+\b", line, re.IGNORECASE):
+            names.add(direct.group(1).upper())
+    return names
+
+
 def virtual_ports_ready(
     port_a: str | int,
     port_b: str | int,
@@ -113,12 +126,7 @@ def virtual_ports_ready(
 ) -> bool:
     expected = {normalize_com_name(port_a), normalize_com_name(port_b)}
     available = {str(port).strip().upper() for port in enumerated_ports}
-    if expected.issubset(available):
-        return True
-    return all(
-        re.search(rf"(?:Real)?PortName={re.escape(port)}(?=,|\s|$)", setup_output, re.IGNORECASE)
-        for port in expected
-    )
+    return expected.issubset(available)
 
 
 def find_setupc(explicit_path: str | Path | None = None) -> Path | None:

@@ -1,75 +1,113 @@
 # Serial Protocol Tester / 串口协议测试器
 
-[中文](#中文) | [English](#english)
+[中文](#中文) | [English](#english) | [协议转换 Skill](https://github.com/10walnut/serial-protocol-tester-skill)
 
-独立的 PySide6 串口上位机与下位机模拟器。配套的通用 Agent Skill 位于 [serial-protocol-tester-skill](https://github.com/10walnut/serial-protocol-tester-skill)，用于把通信协议文档转换成软件可加载的 `serial_protocol.v1` JSON。
+用 PySide6 编写的串口上位机与下位机模拟器。它加载标准 `serial_protocol.v1` JSON，通过按钮发送命令、自动应答、连续上报数据，并逐字节解释 TX/RX 原文、字段作用、大小端、换算公式与校验过程。
 
 ## 中文
 
-主要功能：
+### 主要功能
 
-- 上位机模式发送请求并解析设备应答。
-- 下位机模式匹配外部请求并按协议自动应答。
-- 默认中文界面，右上角按钮切换英文界面；协议正文保持 JSON 自身语言。
-- 发送前输入日期、时间、传感器、标定值等变量，按 JSON 中的安全公式组帧并重算校验和。
-- 数值参数使用独立的 `− / +` 按钮调整；JSON 可用 `step` 指定单次增减量。
-- 同时显示最近一次 TX/RX 的字段位置、功能、原始字节、字节序、计算过程、结果和校验过程。
-- 单击任意通讯历史行，可以重新解析该行保存的原始 TX/RX 数据，而不只查看最后一条。
-- 按帧头和长度处理串口分包、粘包；历史数据保留原始日志，但字段结构只解释一次。
-- 支持物理 COM、pyserial URL、内部虚拟链路以及已安装的 com0com 虚拟串口对。
+- 上位机模式：向真实设备、虚拟设备或内部模拟链路发送请求并解析应答。
+- 下位机模式：匹配外部上位机请求，先发送确认帧，再按 JSON 配置发送延迟帧或周期帧。
+- 多段应答：`response` 表示立即确认，`follow_up_replies` 表示后续一次性或周期数据，`stop_streams` 负责停止指定数据流。
+- 变量组帧：日期、时间、地址、标定值、传感器值等由输入框提供，软件按受限公式写入帧并重新计算校验和。
+- 默认中文，右上角切换英文；协议名称和注释使用 JSON 自身的单一语言。
+- 通讯历史可回选，任意 TX/RX 行都能重新显示该帧的逐字节解释。
+- 支持帧头、长度字段、分包和粘包；重复历史记录保留原始数据，但复用一套字段说明。
+- 支持物理 COM、pyserial URL、内部虚拟链路和 com0com 虚拟串口对。
+- 关于窗口包含版本、作者、项目地址、检查更新和赞赏二维码。
 
-虚拟串口依赖 Windows 内核驱动。创建前软件会检查 PnP 驱动错误和未完成的 `COM#` 设备；只有实际检测到两个目标 COM 端口后才提示成功。错误代码 52 表示 Windows 无法验证驱动数字签名，此时需要卸载不兼容版本、安装与当前 Windows 匹配的已签名驱动并重启，软件不会自动启用测试签名模式。
+### 下载与启动
 
-### 启动
+从 [GitHub Releases](https://github.com/10walnut/serial-protocol-tester-app/releases) 下载 `SerialProtocolTester.exe`。EXE 默认请求管理员权限，以便创建和检查 Windows 虚拟串口；普通串口收发本身不依赖管理员权限。
 
-双击 `start_serial_console.bat`，或运行：
+从源码启动：
 
 ```powershell
+git clone https://github.com/10walnut/serial-protocol-tester-app.git
+cd serial-protocol-tester-app
 .\start_serial_console.ps1
 ```
 
-首次启动会创建 `app\.venv` 并安装依赖。仅检查环境：
+也可以双击 `start_serial_console.bat`。脚本首次运行会创建 `app\.venv` 并安装依赖，随后以管理员权限启动界面。仅检查环境而不启动：
 
 ```powershell
 .\start_serial_console.ps1 -CheckOnly
 ```
 
-### 打包
+### 使用协议 JSON
+
+1. 使用配套 [serial-protocol-tester-skill](https://github.com/10walnut/serial-protocol-tester-skill) 把协议文档转换为 JSON，或先打开自带 `app/sample_protocol.json`。
+2. 点击“加载协议”，检查命令原文、注释、波特率和返回原文。
+3. 选择上位机或下位机角色，选择内部虚拟链路或串口。
+4. 打开连接，双击命令或点击主操作按钮。
+5. 如果帧有变量，填写参数后点击“生成并发送”。
+6. 在右侧选择任意历史行，检查每个字节的功能、原始值、计算过程和结果。
+
+### 多段应答与 100 ms 实时数据
+
+以下配置表示收到启动命令后先发 `response`，100 ms 后发送第一帧实时数据，之后每 100 ms 继续发送，直到收到 `stop_streams` 包含 `realtime` 的命令：
+
+```json
+{
+  "response": {"encoding": "hex", "data": "AA 55 81 01 00"},
+  "follow_up_replies": [
+    {
+      "frame_ref": "realtime_data",
+      "delay_ms": 100,
+      "interval_ms": 100,
+      "repeat_count": 0,
+      "stream_id": "realtime",
+      "prompt_variables": true
+    }
+  ],
+  "auto_reply": true
+}
+```
+
+被引用的 `frames[].simulation` 定义实际发送模板、输入变量、公式和校验。`prompt_variables: true` 会在数据流启动前弹出输入窗口；设为 `false` 或省略时，每帧使用变量默认值。
+
+### 创建可用的 COM10 ↔ COM11
+
+Windows 用户态软件不能独立创建 COM 设备，本功能调用已安装的 com0com 内核驱动。推荐从 com0com 官方 SourceForge 下载 [3.0.0.0 i386/x64 signed package](https://sourceforge.net/projects/com0com/files/com0com/3.0.0.0/com0com-3.0.0.0-i386-and-x64-signed.zip/download)。该驱动发布时间较早；在启用 Secure Boot 的部分 Windows 10/11 系统上仍可能出现代码 52，软件不会关闭驱动签名验证或自动修改 Secure Boot。
+
+1. 如果设备管理器只在 `com0com - serial port emulators` 下显示 COM10/COM11，而“端口（COM 和 LPT）”中没有它们，请先在 com0com Setup 中删除这对旧端口。
+2. 重新安装已签名版本并重启 Windows；设备异常时先在设备管理器确认没有黄色警告。
+3. 以管理员身份打开本软件，点击“虚拟串口”，选择 `setupc.exe`。
+4. 设置本软件端口 COM10、外部软件端口 COM11，然后点击“创建端口对”。
+5. 软件使用 `PortName=COM#,RealPortName=COM10/COM11` 调用 Ports 类安装器。只有两个端口都被 Windows 串口枚举并出现在“端口（COM 和 LPT）”后才提示成功。
+6. 本软件选择“下位机 + 串口 + COM10”；待测试上位机或串口助手打开 COM11。两端波特率、数据位、校验位和停止位保持一致。
+
+若提示旧虚拟端口不可用，说明 `setupc list` 中仍存在直接 `PortName=COM10`/`COM11` 的旧配置。删除旧端口对后再创建，不要在其上重复叠加新端口。
+
+### 打包与测试
 
 ```powershell
+python -m unittest discover -s tests -p "test_*.py" -v
 .\build_serial_console.ps1
 ```
 
-构建脚本会隔离可能污染 Qt DLL 查找的外部 PATH，检查构建清单，并运行 `--self-test` 确认打包后的程序能够真实加载 QtCore 和创建主窗口。只有自检通过才会报告构建成功。输出位于 `dist\SerialProtocolTester.exe`；如果旧 EXE 正在运行而被 Windows 锁定，构建不会强制结束用户进程，而会生成带时间戳的新 EXE。
-
-目录模式：
+打包脚本嵌入应用图标和程序内置的管理员自提升启动逻辑，隔离 Qt DLL 搜索路径，并运行打包后 `--self-test`。输出为 `dist\SerialProtocolTester.exe`。目录模式使用：
 
 ```powershell
 .\build_serial_console.ps1 -OneDir
 ```
 
-### 协议校验
+### 致谢与第三方组件
 
-```powershell
-python .\scripts\validate_protocol.py .\app\sample_protocol.json
-```
+虚拟串口能力依赖 [com0com](https://sourceforge.net/projects/com0com/) 项目。感谢 Vyacheslav Frolov 及贡献者提供 GPL 开源的 Windows null-modem 驱动。创建命令依据其 [官方 ReadMe](https://github.com/datamancer/com0com/blob/master/com0com/ReadMe.txt) 中的 Ports 类和 `RealPortName` 说明。本仓库不重新分发第三方内核驱动，避免用户拿到过期或无法核验来源的二进制文件。
+
+本应用由 `十个核桃 / 10walnut` 维护，应用代码使用 MIT License。
 
 ## English
 
-This is a standalone PySide6 host/device serial simulator. Its companion [serial-protocol-tester-skill](https://github.com/10walnut/serial-protocol-tester-skill) converts protocol documents into validated `serial_protocol.v1` JSON files.
+Serial Protocol Tester is a standalone PySide6 host/device simulator that executes validated `serial_protocol.v1` JSON files. It supports immediate acknowledgements, delayed and periodic follow-up frames, editable formula variables, checksum rebuilding, stream framing, history-row re-decoding, and byte-level TX/RX explanations.
 
-The application supports formula-built transmit frames, selectable traffic-history decoding, checksum calculations, length-based stream framing, physical or virtual COM ports, pyserial URLs, and an internal simulation transport. Numeric variables use explicit decrement/increment buttons, with optional JSON `step` values.
+Download the Windows executable from [GitHub Releases](https://github.com/10walnut/serial-protocol-tester-app/releases). The packaged app requests administrator rights by default for virtual-port creation and diagnostics. To run from source, execute `start_serial_console.ps1`; build with `build_serial_console.ps1`.
 
-Virtual COM creation checks Windows PnP health and confirms that both requested ports actually exist. Driver signature error 52 is reported and blocks repeated creation of invalid devices; the application does not enable Windows test-signing mode.
+For two-application testing, install the official [com0com 3.0.0.0 signed package](https://sourceforge.net/projects/com0com/files/com0com/3.0.0.0/com0com-3.0.0.0-i386-and-x64-signed.zip/download), remove legacy direct `PortName=COM10` pairs, and recreate COM10/COM11 from the application's Virtual Ports dialog. Success requires both names to appear under Windows **Ports (COM & LPT)** and in pyserial enumeration. Some Secure Boot configurations can still reject this older driver with Code 52; the application never disables Windows signature enforcement.
 
-Run `start_serial_console.bat` to start it. Build the Windows executable with `build_serial_console.ps1`; the build is accepted only after the packaged Qt self-test succeeds.
+Load a JSON file, choose Host or Device, open an internal or serial transport, and run a command. In Device mode, `response` is sent first, `follow_up_replies` schedules additional frames, and `stop_streams` cancels them. Select any traffic row to inspect its original bytes and calculations.
 
-## Repository layout
-
-```text
-app/       PySide6 application and protocol core
-tests/     protocol and virtual-port tests
-scripts/   command-line protocol validator
-```
-
-MIT licensed.
+The companion [Serial Protocol Tester Skill](https://github.com/10walnut/serial-protocol-tester-skill) converts protocol documents for Codex, Claude Code, WorkBuddy, Harness, Doubao, and other agents. Thanks to the [com0com project](https://sourceforge.net/projects/com0com/) and its contributors; the driver is GPL software and is linked rather than redistributed here. Application code is MIT licensed.

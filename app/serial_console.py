@@ -1,5 +1,10 @@
 from __future__ import annotations
 
+import ctypes
+import json
+import os
+import re
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -8,7 +13,8 @@ from typing import Any
 import serial
 from serial.tools import list_ports
 from PySide6.QtCore import QTimer, Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QFont, QIcon
+from PySide6.QtGui import QDesktopServices, QFont, QIcon, QPixmap
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractSpinBox,
@@ -31,6 +37,8 @@ from PySide6.QtWidgets import (
     QSpinBox,
     QSplitter,
     QStatusBar,
+    QStyle,
+    QTabWidget,
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
@@ -48,6 +56,7 @@ from protocol_core import (
     format_hex,
     load_protocol,
     localized_value,
+    resolve_follow_up_frame,
     split_framed_bytes,
 )
 from virtual_ports import (
@@ -57,6 +66,7 @@ from virtual_ports import (
     find_setupc,
     launch_elevated_install,
     list_virtual_pairs,
+    non_ports_class_names,
     query_com0com_driver_problems,
     virtual_ports_ready,
 )
@@ -71,6 +81,56 @@ def resource_root() -> Path:
 
 ROOT = resource_root()
 SAMPLE_PROTOCOL = ROOT / "sample_protocol.json"
+ASSETS_DIR = ROOT / "assets"
+LOGO_PATH = ASSETS_DIR / "serial-protocol-tester-logo.png"
+APP_VERSION = "1.1.0"
+AUTHOR = "十个核桃 / 10walnut"
+PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-app"
+SKILL_PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-skill"
+LATEST_RELEASE_API = "https://api.github.com/repos/10walnut/serial-protocol-tester-app/releases/latest"
+
+
+def version_key(value: str) -> tuple[int, int, int]:
+    numbers = [int(part) for part in re.findall(r"\d+", value)[:3]]
+    return tuple((numbers + [0, 0, 0])[:3])
+
+
+def is_windows_admin() -> bool:
+    if os.name != "nt":
+        return True
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin())
+    except OSError:
+        return False
+
+
+def relaunch_as_admin() -> bool:
+    if os.name != "nt" or is_windows_admin():
+        return False
+    if getattr(sys, "frozen", False):
+        executable = sys.executable
+        arguments = subprocess.list2cmdline(sys.argv[1:])
+        working_directory = str(Path(sys.executable).resolve().parent)
+    else:
+        executable = sys.executable
+        arguments = subprocess.list2cmdline([str(Path(__file__).resolve()), *sys.argv[1:]])
+        working_directory = str(Path(__file__).resolve().parent)
+    result = ctypes.windll.shell32.ShellExecuteW(
+        None,
+        "runas",
+        executable,
+        arguments,
+        working_directory,
+        1,
+    )
+    if result <= 32:
+        ctypes.windll.user32.MessageBoxW(
+            None,
+            f"无法以管理员权限启动串口协议测试器（错误代码 {result}）。",
+            "串口协议测试器",
+            0x10,
+        )
+    return True
 
 
 UI_TEXT = {
@@ -166,15 +226,34 @@ UI_TEXT = {
         "vp_driver_unsigned": "检测到 {count} 个失效的 com0com 设备：错误代码 52，Windows 无法验证驱动数字签名。请卸载当前 com0com，安装与当前 Windows 匹配的已签名版本并重启；软件已停止创建，以免继续产生无效设备。",
         "vp_driver_problem": "检测到 {count} 个 com0com 驱动异常（{codes}）。请先在设备管理器中修复或重新安装驱动。",
         "vp_unassigned": "检测到 {count} 个未完成的 COM# 端口。请先修复或卸载这些失效设备，再创建新端口对。",
+        "vp_wrong_class": "检测到未注册到“端口（COM 和 LPT）”的旧端口：{ports}。请先在 com0com Setup 中删除对应端口对，再由本软件重新创建。",
+        "vp_wrong_class_title": "旧虚拟端口不可用",
         "vp_creating": "正在创建并验证 {port_a} ↔ {port_b}，请完成 Windows 管理员确认…",
         "vp_created_title": "虚拟串口已创建",
         "vp_created_message": "已验证 {port_a} ↔ {port_b}，两个端口现在可供软件使用。",
-        "vp_verify_failed": "创建命令已运行，但在等待期间没有检测到 {port_a} 和 {port_b}。请查看上方驱动状态和设备管理器。",
+        "vp_verify_failed": "创建命令已运行，但 Windows 串口枚举中没有检测到 {port_a} 和 {port_b}。只有两个端口都出现在“端口（COM 和 LPT）”后才可使用；请删除旧的自定义类端口对后重试。",
         "variable_title": "输入发送参数：{command}",
         "variable_ok": "生成并发送",
         "variable_cancel": "取消",
         "variable_decrease": "减少 {label}",
         "variable_increase": "增加 {label}",
+        "about_tooltip": "关于与检查更新",
+        "about_title": "关于串口协议测试器",
+        "about_app": "串口协议测试器",
+        "about_version": "版本 {version}",
+        "about_author": "作者：{author}",
+        "about_project": "软件项目地址",
+        "about_skill": "协议转换 Skill 项目地址",
+        "about_donation": "赞赏",
+        "about_alipay": "支付宝",
+        "about_wechat": "微信赞赏",
+        "about_check_update": "检查更新",
+        "about_checking": "正在检查 GitHub 最新版本…",
+        "about_latest": "当前已是最新版本。",
+        "about_update_available": "发现新版本 {version}，打开发布页面",
+        "about_open_release": "打开新版本",
+        "about_update_error": "检查更新失败：{error}",
+        "about_close": "关闭",
     },
     "en": {
         "title": "Serial Protocol Tester",
@@ -268,15 +347,34 @@ UI_TEXT = {
         "vp_driver_unsigned": "Detected {count} failed com0com devices: error 52 means Windows cannot verify the driver signature. Uninstall this com0com build, install a signed version compatible with this Windows release, and reboot. Creation is blocked to avoid more invalid devices.",
         "vp_driver_problem": "Detected {count} com0com driver problems ({codes}). Repair or reinstall the driver in Device Manager first.",
         "vp_unassigned": "Detected {count} unfinished COM# ports. Repair or remove these failed devices before creating another pair.",
+        "vp_wrong_class": "Legacy ports not registered under Ports (COM & LPT) were found: {ports}. Remove their pair in com0com Setup, then recreate it with this application.",
+        "vp_wrong_class_title": "Legacy virtual ports are unusable",
         "vp_creating": "Creating and verifying {port_a} ↔ {port_b}; complete the Windows administrator prompt…",
         "vp_created_title": "Virtual ports created",
         "vp_created_message": "Verified {port_a} ↔ {port_b}. Both ports are now available to applications.",
-        "vp_verify_failed": "The creation command ran, but {port_a} and {port_b} were not detected before timeout. Check the driver status above and Device Manager.",
+        "vp_verify_failed": "The command ran, but Windows serial enumeration did not find {port_a} and {port_b}. Both ports must appear under Ports (COM & LPT); remove legacy custom-class pairs and retry.",
         "variable_title": "Enter transmit values: {command}",
         "variable_ok": "Build and send",
         "variable_cancel": "Cancel",
         "variable_decrease": "Decrease {label}",
         "variable_increase": "Increase {label}",
+        "about_tooltip": "About and check for updates",
+        "about_title": "About Serial Protocol Tester",
+        "about_app": "Serial Protocol Tester",
+        "about_version": "Version {version}",
+        "about_author": "Author: {author}",
+        "about_project": "Application repository",
+        "about_skill": "Protocol Skill repository",
+        "about_donation": "Support the author",
+        "about_alipay": "Alipay",
+        "about_wechat": "WeChat",
+        "about_check_update": "Check for updates",
+        "about_checking": "Checking the latest GitHub release…",
+        "about_latest": "This is the latest version.",
+        "about_update_available": "Version {version} is available; open the release page",
+        "about_open_release": "Open release",
+        "about_update_error": "Update check failed: {error}",
+        "about_close": "Close",
     },
 }
 
@@ -284,6 +382,149 @@ UI_TEXT = {
 def ui_text(language: str, key: str, **values: Any) -> Any:
     text = UI_TEXT[language][key]
     return text.format(**values) if isinstance(text, str) and values else text
+
+
+class AboutDialog(QDialog):
+    def __init__(self, language: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.language = language
+        self.release_url = ""
+        self.network = QNetworkAccessManager(self)
+        self.setWindowTitle(self._t("about_title"))
+        self.setMinimumSize(470, 600)
+        self.resize(520, 650)
+        self._build_ui()
+
+    def _t(self, key: str, **values: Any) -> Any:
+        return ui_text(self.language, key, **values)
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 20, 24, 18)
+        layout.setSpacing(10)
+
+        logo = QLabel()
+        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pixmap = QPixmap(str(LOGO_PATH))
+        if not pixmap.isNull():
+            logo.setPixmap(
+                pixmap.scaled(
+                    92,
+                    92,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+        layout.addWidget(logo)
+
+        name = QLabel(self._t("about_app"))
+        name.setObjectName("aboutName")
+        name.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(name)
+        version = QLabel(self._t("about_version", version=APP_VERSION))
+        version.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(version)
+        author = QLabel(self._t("about_author", author=AUTHOR))
+        author.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(author)
+
+        links = QLabel(
+            f'<a href="{PROJECT_URL}">{self._t("about_project")}</a>'
+            f' &nbsp;·&nbsp; <a href="{SKILL_PROJECT_URL}">{self._t("about_skill")}</a>'
+        )
+        links.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        links.setOpenExternalLinks(True)
+        links.setWordWrap(True)
+        layout.addWidget(links)
+
+        donation_title = QLabel(self._t("about_donation"))
+        donation_title.setObjectName("sectionTitle")
+        layout.addWidget(donation_title)
+        donation_tabs = QTabWidget()
+        donation_tabs.setMinimumHeight(270)
+        donation_tabs.addTab(self._qr_label(ASSETS_DIR / "donate-alipay.jpg"), self._t("about_alipay"))
+        donation_tabs.addTab(self._qr_label(ASSETS_DIR / "donate-wechat.png"), self._t("about_wechat"))
+        layout.addWidget(donation_tabs, 1)
+
+        self.update_status = QLabel()
+        self.update_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.update_status.setWordWrap(True)
+        layout.addWidget(self.update_status)
+
+        buttons = QHBoxLayout()
+        self.update_button = QPushButton(self._t("about_check_update"))
+        self.update_button.clicked.connect(self._update_button_clicked)
+        close_button = QPushButton(self._t("about_close"))
+        close_button.clicked.connect(self.accept)
+        buttons.addStretch(1)
+        buttons.addWidget(self.update_button)
+        buttons.addWidget(close_button)
+        layout.addLayout(buttons)
+
+    def _qr_label(self, path: Path) -> QLabel:
+        label = QLabel()
+        label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        pixmap = QPixmap(str(path))
+        if not pixmap.isNull():
+            if path.name == "donate-alipay.jpg":
+                pixmap = pixmap.copy(
+                    int(pixmap.width() * 0.18),
+                    int(pixmap.height() * 0.30),
+                    int(pixmap.width() * 0.64),
+                    int(pixmap.height() * 0.36),
+                )
+            elif path.name == "donate-wechat.png":
+                pixmap = pixmap.copy(
+                    int(pixmap.width() * 0.29),
+                    int(pixmap.height() * 0.155),
+                    int(pixmap.width() * 0.415),
+                    int(pixmap.height() * 0.415),
+                )
+            label.setPixmap(
+                pixmap.scaled(
+                    250,
+                    250,
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+        return label
+
+    def _update_button_clicked(self) -> None:
+        if self.release_url:
+            QDesktopServices.openUrl(QUrl(self.release_url))
+            return
+        self.release_url = ""
+        self.update_button.setEnabled(False)
+        self.update_status.setText(self._t("about_checking"))
+        request = QNetworkRequest(QUrl(LATEST_RELEASE_API))
+        request.setRawHeader(b"Accept", b"application/vnd.github+json")
+        request.setRawHeader(b"User-Agent", b"SerialProtocolTester-update-check")
+        reply = self.network.get(request)
+        reply.finished.connect(lambda reply=reply: self._handle_update_reply(reply))
+
+    def _handle_update_reply(self, reply: QNetworkReply) -> None:
+        self.update_button.setEnabled(True)
+        try:
+            if reply.error() != QNetworkReply.NetworkError.NoError:
+                raise ValueError(reply.errorString())
+            payload = json.loads(bytes(reply.readAll()).decode("utf-8"))
+            tag = str(payload.get("tag_name", "")).strip()
+            release_url = str(payload.get("html_url", "")).strip()
+            if not tag:
+                raise ValueError("GitHub response did not contain a release tag")
+            if version_key(tag) > version_key(APP_VERSION):
+                if not release_url.startswith(PROJECT_URL + "/releases/"):
+                    raise ValueError("GitHub response contained an unexpected release URL")
+                self.release_url = release_url
+                self.update_status.setText(self._t("about_update_available", version=tag))
+                self.update_button.setText(self._t("about_open_release"))
+            else:
+                self.update_status.setText(self._t("about_latest"))
+        except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+            self.update_status.setText(self._t("about_update_error", error=exc))
+        finally:
+            reply.deleteLater()
 
 
 class VariableInputDialog(QDialog):
@@ -521,6 +762,13 @@ class VirtualPortDialog(QDialog):
             self.pair_output.setPlainText(output)
             self.refresh_callback()
             return
+        wrong_class = sorted(non_ports_class_names(output))
+        if wrong_class:
+            self.driver_status.setText(self._t("vp_wrong_class", ports=", ".join(wrong_class)))
+            self.driver_status.setStyleSheet("color: #9a4f00; font-weight: 600;")
+            self.pair_output.setPlainText(output)
+            self.refresh_callback()
+            return
         self.driver_status.setText(self._t("vp_found", path=setupc))
         self.driver_status.setStyleSheet("color: #176b70; font-weight: 600;")
         self.pair_output.setPlainText(output)
@@ -540,6 +788,19 @@ class VirtualPortDialog(QDialog):
         port_b = f"COM{self.port_b_spin.value()}"
         if port_a == port_b:
             QMessageBox.warning(self, self._t("vp_invalid_title"), self._t("vp_same_port"))
+            return
+        try:
+            configured_output = list_virtual_pairs(setupc)
+        except VirtualPortError as exc:
+            QMessageBox.critical(self, self._t("vp_error_title"), str(exc))
+            return
+        wrong_class_conflicts = sorted({port_a, port_b} & non_ports_class_names(configured_output))
+        if wrong_class_conflicts:
+            QMessageBox.warning(
+                self,
+                self._t("vp_wrong_class_title"),
+                self._t("vp_wrong_class", ports=", ".join(wrong_class_conflicts)),
+            )
             return
         existing = {port.device.upper() for port in list_ports.comports()}
         conflicts = [port for port in (port_a, port_b) if port in existing]
@@ -613,12 +874,14 @@ class SerialConsole(QMainWindow):
         self.last_command: dict[str, Any] | None = None
         self.log_entries: list[dict[str, Any]] = []
         self.variable_values: dict[str, dict[str, Any]] = {}
+        self.reply_timers: dict[str, list[QTimer]] = {}
         self.rx_buffer = bytearray()
         self.last_rx_at = 0.0
         self.language = "zh"
 
         self.resize(1380, 840)
         self.setMinimumSize(1050, 680)
+        self.setWindowIcon(QIcon(str(LOGO_PATH)))
         self._build_ui()
         self._apply_style()
 
@@ -645,7 +908,12 @@ class SerialConsole(QMainWindow):
         self.language_button = QPushButton()
         self.language_button.setFixedWidth(58)
         self.language_button.clicked.connect(self._toggle_language)
+        self.about_button = QToolButton()
+        self.about_button.setFixedSize(34, 34)
+        self.about_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation))
+        self.about_button.clicked.connect(self._show_about)
         file_row.addWidget(self.protocol_label, 1)
+        file_row.addWidget(self.about_button)
         file_row.addWidget(self.language_button)
         file_row.addWidget(self.load_button)
         root.addLayout(file_row)
@@ -816,6 +1084,7 @@ class SerialConsole(QMainWindow):
     def _retranslate_ui(self) -> None:
         self.setWindowTitle(self._t("title"))
         self.language_button.setText(self._t("language_button"))
+        self.about_button.setToolTip(self._t("about_tooltip"))
         self.load_button.setText(self._t("load_protocol"))
         self.settings_group.setTitle(self._t("connection"))
         self.role_label.setText(self._t("role"))
@@ -868,6 +1137,9 @@ class SerialConsole(QMainWindow):
         dialog.exec()
         self._refresh_ports()
 
+    def _show_about(self) -> None:
+        AboutDialog(self.language, self).exec()
+
     def _apply_style(self) -> None:
         mono = QFont("Consolas")
         mono.setStyleHint(QFont.StyleHint.Monospace)
@@ -881,6 +1153,8 @@ class SerialConsole(QMainWindow):
                         margin-top: 12px; padding-top: 10px; font-weight: 600; }
             QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
             QLabel#protocolTitle { font-size: 18px; font-weight: 700; color: #172126; }
+            QLabel#aboutName { font-size: 20px; font-weight: 700; color: #172126; }
+            QLabel#sectionTitle { font-weight: 700; color: #26343a; }
             QPushButton { min-height: 30px; padding: 0 12px; background: #ffffff;
                           border: 1px solid #aebbc2; border-radius: 5px; }
             QPushButton:hover { background: #eef4f4; border-color: #608087; }
@@ -915,6 +1189,7 @@ class SerialConsole(QMainWindow):
         except ProtocolError as exc:
             QMessageBox.critical(self, self._t("protocol_error"), str(exc))
             return
+        self._stop_all_reply_streams()
         self.protocol = protocol
         self.protocol_path = path
         self.protocol_label.setText(f"{localized_value(protocol, 'name', self.language)}  ·  {path.name}")
@@ -1041,6 +1316,7 @@ class SerialConsole(QMainWindow):
             self.statusBar().showMessage(self._t("connection_failed_status", error=exc))
 
     def _close_connection(self) -> None:
+        self._stop_all_reply_streams()
         if self.serial_port is not None:
             try:
                 self.serial_port.close()
@@ -1082,7 +1358,7 @@ class SerialConsole(QMainWindow):
                 request, request_spec = prepared
                 self.last_command = command
                 self._transmit(request, command, "TX", request_spec)
-                if internal and command.get("response"):
+                if internal and (command.get("response") or command.get("follow_up_replies") or command.get("stop_streams")):
                     QTimer.singleShot(80, lambda: self._receive_internal_response(command))
             elif internal:
                 prepared = self._prepare_request(command)
@@ -1135,9 +1411,11 @@ class SerialConsole(QMainWindow):
     def _receive_internal_response(self, command: dict[str, Any]) -> None:
         if not self.connected or self.transport_combo.currentData() != "internal":
             return
+        self._stop_reply_streams(command.get("stop_streams", []))
         response = command.get("response")
         if response:
             self._handle_received_frame(encode_frame(response), command)
+        self._schedule_follow_up_replies(command, "RX")
 
     def _poll_serial(self) -> None:
         if not self.connected or self.serial_port is None:
@@ -1194,17 +1472,111 @@ class SerialConsole(QMainWindow):
         self._append_log("RX", data, definition, frame_spec)
         if command and self.role_combo.currentData() == "host":
             self.last_command = command
-        if command and self.role_combo.currentData() == "device" and command.get("auto_reply") and command.get("response"):
+        has_reply_behavior = command and (
+            command.get("response") or command.get("follow_up_replies") or command.get("stop_streams")
+        )
+        if command and self.role_combo.currentData() == "device" and command.get("auto_reply") and has_reply_behavior:
             QTimer.singleShot(50, lambda: self._send_automatic_response(command))
 
     def _send_automatic_response(self, command: dict[str, Any]) -> None:
         if not self.connected:
             return
         try:
-            response = encode_frame(command["response"])
-            self._transmit(response, command, "TX", command.get("response"))
+            self._stop_reply_streams(command.get("stop_streams", []))
+            response_spec = command.get("response")
+            if response_spec:
+                self._transmit(encode_frame(response_spec), command, "TX", response_spec)
+            self._schedule_follow_up_replies(command, "TX")
         except (ProtocolError, serial.SerialException, OSError) as exc:
             self._report_runtime_error(exc)
+
+    def _schedule_follow_up_replies(self, command: dict[str, Any], direction: str) -> None:
+        if not self.protocol:
+            return
+        for index, reply in enumerate(command.get("follow_up_replies", [])):
+            frame_spec = resolve_follow_up_frame(self.protocol, reply)
+            interval_ms = reply.get("interval_ms")
+            repeat_count = reply.get("repeat_count", 0 if interval_ms is not None else 1)
+            stream_id = reply.get("stream_id") or f"{command['id']}:{index}"
+            if stream_id in self.reply_timers:
+                self._stop_reply_streams([stream_id])
+
+            prepared_values: dict[str, Any] | None = None
+            if frame_spec.get("variables") and reply.get("prompt_variables", False):
+                frame_name = localized_value(frame_spec, "name", self.language, stream_id)
+                value_key = f"stream:{stream_id}"
+                dialog = VariableInputDialog(
+                    frame_spec,
+                    frame_name,
+                    self.language,
+                    self.variable_values.get(value_key),
+                    self,
+                )
+                if dialog.exec() != QDialog.DialogCode.Accepted:
+                    continue
+                prepared_values = dialog.values()
+                self.variable_values[value_key] = prepared_values
+
+            timer = QTimer(self)
+            timer.setSingleShot(True)
+            timer.setInterval(reply.get("delay_ms", 0))
+            self.reply_timers.setdefault(stream_id, []).append(timer)
+            state = {"sent": 0}
+
+            def emit_reply(
+                timer: QTimer = timer,
+                stream_id: str = stream_id,
+                frame_spec: dict[str, Any] = frame_spec,
+                interval_ms: int | None = interval_ms,
+                repeat_count: int = repeat_count,
+                direction: str = direction,
+                state: dict[str, int] = state,
+                prepared_values: dict[str, Any] | None = prepared_values,
+            ) -> None:
+                if not self.connected:
+                    self._remove_reply_timer(stream_id, timer)
+                    return
+                try:
+                    values = dict(prepared_values) if prepared_values is not None else default_variable_values(frame_spec)
+                    runtime_spec = dict(frame_spec)
+                    if values:
+                        runtime_spec["_runtime_values"] = values
+                    data = encode_frame(frame_spec, values)
+                    if direction == "TX":
+                        self._transmit(data, frame_spec, "TX", runtime_spec)
+                    else:
+                        self._handle_received_frame(data)
+                    state["sent"] += 1
+                    if interval_ms is not None and (repeat_count == 0 or state["sent"] < repeat_count):
+                        timer.setSingleShot(False)
+                        timer.setInterval(interval_ms)
+                        timer.start()
+                    else:
+                        self._remove_reply_timer(stream_id, timer)
+                except (ProtocolError, serial.SerialException, OSError, ValueError) as exc:
+                    self._remove_reply_timer(stream_id, timer)
+                    self._report_runtime_error(exc)
+
+            timer.timeout.connect(emit_reply)
+            timer.start()
+
+    def _remove_reply_timer(self, stream_id: str, timer: QTimer) -> None:
+        timer.stop()
+        timers = self.reply_timers.get(stream_id, [])
+        if timer in timers:
+            timers.remove(timer)
+        if not timers:
+            self.reply_timers.pop(stream_id, None)
+        timer.deleteLater()
+
+    def _stop_reply_streams(self, stream_ids: list[str]) -> None:
+        for stream_id in stream_ids:
+            for timer in list(self.reply_timers.pop(stream_id, [])):
+                timer.stop()
+                timer.deleteLater()
+
+    def _stop_all_reply_streams(self) -> None:
+        self._stop_reply_streams(list(self.reply_timers))
 
     def _append_log(
         self,
@@ -1309,9 +1681,13 @@ class SerialConsole(QMainWindow):
 
 
 def main() -> int:
+    if "--self-test" not in sys.argv and relaunch_as_admin():
+        return 0
     app = QApplication(sys.argv)
     app.setApplicationName("Serial Protocol Tester")
-    app.setWindowIcon(QIcon())
+    app.setApplicationVersion(APP_VERSION)
+    app.setOrganizationName("10walnut")
+    app.setWindowIcon(QIcon(str(LOGO_PATH)))
     window = SerialConsole()
     if "--self-test" in sys.argv:
         if window.command_table.rowCount() == 0 or window.decoded_table.columnCount() != 8:
