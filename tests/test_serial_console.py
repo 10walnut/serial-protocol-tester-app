@@ -4,6 +4,7 @@ import os
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -14,9 +15,18 @@ sys.path.insert(0, str(APP_ROOT))
 
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QToolButton
+from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QLabel, QTabWidget, QToolButton
 
-from serial_console import AboutDialog, LOGO_PATH, SerialConsole, VariableInputDialog, version_key
+from protocol_core import encode_frame
+from serial_console import (
+    AboutDialog,
+    COMMON_BAUDRATES,
+    LOGO_PATH,
+    SerialConsole,
+    VariableInputDialog,
+    VirtualPortDialog,
+    version_key,
+)
 
 
 class SerialConsoleUiTests(unittest.TestCase):
@@ -108,7 +118,68 @@ class SerialConsoleUiTests(unittest.TestCase):
         dialog = AboutDialog("zh")
         self.assertIn("关于", dialog.windowTitle())
         self.assertTrue(dialog.update_button.isEnabled())
+        tabs = dialog.findChild(QTabWidget)
+        self.assertEqual(tabs.count(), 3)
+        self.assertIsNotNone(dialog.findChild(QLabel, "qr_donate-alipay"))
+        self.assertIsNotNone(dialog.findChild(QLabel, "qr_donate-wechat"))
         dialog.close()
+
+    def test_baudrate_is_preloaded_editable_and_manual_value_is_preserved(self) -> None:
+        window = SerialConsole()
+        self.assertTrue(window.baudrate_combo.isEditable())
+        self.assertIn(115200, COMMON_BAUDRATES)
+        self.assertEqual(window.baudrate_combo.currentText(), "9600")
+
+        window.baudrate_combo.setEditText("57600")
+        window._commit_baudrate_edit()
+        command = next(item for item in window.protocol["commands"] if item["id"] == "ascii_status")
+        window._set_command_baudrate(command)
+        self.assertEqual(window._current_baudrate(), 57600)
+
+        window.baudrate_user_edited = False
+        window._set_command_baudrate(command)
+        self.assertEqual(window._current_baudrate(), 115200)
+        window.close()
+
+    def test_virtual_port_numbers_use_explicit_working_step_buttons(self) -> None:
+        with patch.object(VirtualPortDialog, "_refresh_driver_state"):
+            dialog = VirtualPortDialog("zh", lambda: None)
+        increase = dialog.findChild(QToolButton, "increase_port_a")
+        decrease = dialog.findChild(QToolButton, "decrease_port_a")
+        self.assertEqual(dialog.port_a_spin.buttonSymbols(), QAbstractSpinBox.ButtonSymbols.NoButtons)
+        QTest.mouseClick(increase, Qt.MouseButton.LeftButton)
+        self.assertEqual(dialog.port_a_spin.value(), 11)
+        QTest.mouseClick(decrease, Qt.MouseButton.LeftButton)
+        self.assertEqual(dialog.port_a_spin.value(), 10)
+        dialog.close()
+
+    def test_serial_url_device_receives_request_and_sends_automatic_reply(self) -> None:
+        window = SerialConsole()
+        window.role_combo.setCurrentIndex(window.role_combo.findData("device"))
+        window.transport_combo.setCurrentIndex(window.transport_combo.findData("serial"))
+        window.port_combo.setEditText("loop://")
+        window._open_connection()
+        self.assertTrue(window.connected)
+
+        command = window.protocol["commands"][0]
+        request = encode_frame(command["request"])
+        expected_response = encode_frame(command["response"])
+        window.serial_port.write(request)
+        window.serial_port.flush()
+        QTest.qWait(260)
+
+        self.assertTrue(any(entry["direction"] == "RX" and entry["data"] == request for entry in window.log_entries))
+        self.assertTrue(
+            any(entry["direction"] == "TX" and entry["data"] == expected_response for entry in window.log_entries)
+        )
+        window.close()
+
+    def test_host_mode_explains_why_received_request_is_not_replied_to(self) -> None:
+        window = SerialConsole()
+        command = window.protocol["commands"][0]
+        window._handle_received_frame(encode_frame(command["request"]))
+        self.assertIn("下位机", window.statusBar().currentMessage())
+        window.close()
 
 
 if __name__ == "__main__":

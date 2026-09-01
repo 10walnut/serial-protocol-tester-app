@@ -13,7 +13,7 @@ from typing import Any
 import serial
 from serial.tools import list_ports
 from PySide6.QtCore import QTimer, Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QFont, QIcon, QPixmap
+from PySide6.QtGui import QDesktopServices, QFont, QIcon, QIntValidator, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QApplication,
@@ -83,11 +83,31 @@ ROOT = resource_root()
 SAMPLE_PROTOCOL = ROOT / "sample_protocol.json"
 ASSETS_DIR = ROOT / "assets"
 LOGO_PATH = ASSETS_DIR / "serial-protocol-tester-logo.png"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 AUTHOR = "十个核桃 / 10walnut"
 PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-app"
 SKILL_PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-skill"
+SKILL_DOWNLOAD_URL = "https://github.com/10walnut/serial-protocol-tester-skill/archive/refs/heads/main.zip"
 LATEST_RELEASE_API = "https://api.github.com/repos/10walnut/serial-protocol-tester-app/releases/latest"
+COMMON_BAUDRATES = (
+    300,
+    600,
+    1200,
+    2400,
+    4800,
+    9600,
+    14400,
+    19200,
+    38400,
+    57600,
+    115200,
+    128000,
+    230400,
+    256000,
+    460800,
+    921600,
+    1000000,
+)
 
 
 def version_key(value: str) -> tuple[int, int, int]:
@@ -150,6 +170,7 @@ UI_TEXT = {
         "refresh": "刷新",
         "virtual_ports": "虚拟串口",
         "baudrate": "波特率",
+        "baudrate_invalid": "波特率必须是 50 到 4000000 之间的整数。",
         "data_bits": "数据位",
         "parity": "校验位",
         "parity_none": "无",
@@ -195,6 +216,9 @@ UI_TEXT = {
         "no_response_message": "该命令没有配置应答帧。",
         "unmatched": "未匹配",
         "traffic_status": "{direction} {count} 字节 · {command}",
+        "rx_device_unmatched": "已接收 {count} 字节，但未匹配协议请求，因此没有自动应答。请确认角色为下位机、串口助手使用 HEX 发送，并检查帧长度与校验和。",
+        "rx_host_request": "收到请求“{command}”，当前为上位机角色，不会自动应答；要模拟设备请切换为下位机。",
+        "rx_auto_reply_disabled": "已匹配请求“{command}”，但该命令未启用 auto_reply 或未配置应答行为。",
         "output_cleared": "已清空输出",
         "serial_error": "串口错误",
         "error_status": "错误：{error}",
@@ -204,6 +228,8 @@ UI_TEXT = {
         "vp_browse": "选择",
         "vp_port_a": "本软件端口",
         "vp_port_b": "外部软件端口",
+        "vp_port_decrease": "减小端口号",
+        "vp_port_increase": "增大端口号",
         "vp_create": "创建端口对",
         "vp_refresh": "刷新状态",
         "vp_close": "关闭",
@@ -254,6 +280,14 @@ UI_TEXT = {
         "about_open_release": "打开新版本",
         "about_update_error": "检查更新失败：{error}",
         "about_close": "关闭",
+        "about_tab_about": "关于",
+        "about_tab_skill": "Skill 下载与使用",
+        "about_tab_support": "支持作者",
+        "about_support_message": "如果这个工具为你的串口调试节省了时间，欢迎请作者喝杯咖啡。每一份支持都会用于继续修复兼容性、补充协议示例并维护开源版本。感谢你的认可与支持。",
+        "about_skill_intro": "Serial Protocol Tester Skill 可以读取协议文档并生成本软件可加载的 serial_protocol.v1 JSON。",
+        "about_skill_download": "下载 Skill ZIP",
+        "about_skill_open": "打开 Skill 项目与详细教程",
+        "about_skill_steps": "1. 下载并解压 Skill。\n\n2. Codex：运行 .\\install.ps1 -Target codex\n   Claude Code：运行 .\\install.ps1 -Target claude\n   WorkBuddy / Harness：按项目 README 选择对应目标。\n\n3. 豆包或其他无法扫描 Skill 目录的客户端：上传 SKILL.md、references/protocol-script-format.md 和原始协议。\n\n4. 提示词示例：\n使用 serial-protocol-tester Skill 读取协议，只输出中文 JSON；生成后运行校验器，并为每个发送和接收字段写明作用与计算公式。",
     },
     "en": {
         "title": "Serial Protocol Tester",
@@ -271,6 +305,7 @@ UI_TEXT = {
         "refresh": "Refresh",
         "virtual_ports": "Virtual ports",
         "baudrate": "Baud rate",
+        "baudrate_invalid": "Baud rate must be an integer from 50 to 4000000.",
         "data_bits": "Data bits",
         "parity": "Parity",
         "parity_none": "None",
@@ -316,6 +351,9 @@ UI_TEXT = {
         "no_response_message": "This command has no configured response frame.",
         "unmatched": "Unmatched",
         "traffic_status": "{direction} {count} bytes · {command}",
+        "rx_device_unmatched": "Received {count} bytes but no protocol request matched, so no automatic reply was sent. Select Device, send HEX bytes, and verify frame length and checksum.",
+        "rx_host_request": "Received request '{command}'. Host mode does not auto-reply; switch to Device to emulate the device.",
+        "rx_auto_reply_disabled": "Request '{command}' matched, but auto_reply is disabled or no reply behavior is configured.",
         "output_cleared": "Output cleared",
         "serial_error": "Serial error",
         "error_status": "Error: {error}",
@@ -325,6 +363,8 @@ UI_TEXT = {
         "vp_browse": "Browse",
         "vp_port_a": "This application",
         "vp_port_b": "External application",
+        "vp_port_decrease": "Decrease COM number",
+        "vp_port_increase": "Increase COM number",
         "vp_create": "Create port pair",
         "vp_refresh": "Refresh status",
         "vp_close": "Close",
@@ -375,6 +415,14 @@ UI_TEXT = {
         "about_open_release": "Open release",
         "about_update_error": "Update check failed: {error}",
         "about_close": "Close",
+        "about_tab_about": "About",
+        "about_tab_skill": "Download and use Skill",
+        "about_tab_support": "Support",
+        "about_support_message": "If this tool saves time during serial debugging, you can support its continued development. Contributions help maintain compatibility, add protocol examples, and keep the open-source releases current. Thank you for your support.",
+        "about_skill_intro": "Serial Protocol Tester Skill reads protocol documents and generates serial_protocol.v1 JSON files that this application can load.",
+        "about_skill_download": "Download Skill ZIP",
+        "about_skill_open": "Open Skill project and guide",
+        "about_skill_steps": "1. Download and extract the Skill.\n\n2. Codex: run .\\install.ps1 -Target codex\n   Claude Code: run .\\install.ps1 -Target claude\n   WorkBuddy / Harness: choose the matching target from the repository guide.\n\n3. For Doubao or clients without Skill-directory discovery, upload SKILL.md, references/protocol-script-format.md, and the source protocol.\n\n4. Example prompt:\nUse the serial-protocol-tester Skill, emit one-language JSON, run validation, and explain the purpose and calculation of every transmitted and received field.",
     },
 }
 
@@ -391,8 +439,8 @@ class AboutDialog(QDialog):
         self.release_url = ""
         self.network = QNetworkAccessManager(self)
         self.setWindowTitle(self._t("about_title"))
-        self.setMinimumSize(470, 600)
-        self.resize(520, 650)
+        self.setMinimumSize(680, 620)
+        self.resize(760, 700)
         self._build_ui()
 
     def _t(self, key: str, **values: Any) -> Any:
@@ -400,7 +448,26 @@ class AboutDialog(QDialog):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(24, 20, 24, 18)
+        layout.setContentsMargins(18, 16, 18, 14)
+        layout.setSpacing(10)
+
+        tabs = QTabWidget()
+        tabs.addTab(self._build_about_page(), self._t("about_tab_about"))
+        tabs.addTab(self._build_skill_page(), self._t("about_tab_skill"))
+        tabs.addTab(self._build_support_page(), self._t("about_tab_support"))
+        layout.addWidget(tabs, 1)
+
+        close_row = QHBoxLayout()
+        close_button = QPushButton(self._t("about_close"))
+        close_button.clicked.connect(self.accept)
+        close_row.addStretch(1)
+        close_row.addWidget(close_button)
+        layout.addLayout(close_row)
+
+    def _build_about_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(26, 24, 26, 20)
         layout.setSpacing(10)
 
         logo = QLabel()
@@ -409,8 +476,8 @@ class AboutDialog(QDialog):
         if not pixmap.isNull():
             logo.setPixmap(
                 pixmap.scaled(
-                    92,
-                    92,
+                    96,
+                    96,
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation,
                 )
@@ -436,54 +503,102 @@ class AboutDialog(QDialog):
         links.setOpenExternalLinks(True)
         links.setWordWrap(True)
         layout.addWidget(links)
-
-        donation_title = QLabel(self._t("about_donation"))
-        donation_title.setObjectName("sectionTitle")
-        layout.addWidget(donation_title)
-        donation_tabs = QTabWidget()
-        donation_tabs.setMinimumHeight(270)
-        donation_tabs.addTab(self._qr_label(ASSETS_DIR / "donate-alipay.jpg"), self._t("about_alipay"))
-        donation_tabs.addTab(self._qr_label(ASSETS_DIR / "donate-wechat.png"), self._t("about_wechat"))
-        layout.addWidget(donation_tabs, 1)
+        layout.addStretch(1)
 
         self.update_status = QLabel()
         self.update_status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.update_status.setWordWrap(True)
         layout.addWidget(self.update_status)
-
-        buttons = QHBoxLayout()
+        update_row = QHBoxLayout()
         self.update_button = QPushButton(self._t("about_check_update"))
         self.update_button.clicked.connect(self._update_button_clicked)
-        close_button = QPushButton(self._t("about_close"))
-        close_button.clicked.connect(self.accept)
-        buttons.addStretch(1)
-        buttons.addWidget(self.update_button)
-        buttons.addWidget(close_button)
-        layout.addLayout(buttons)
+        update_row.addStretch(1)
+        update_row.addWidget(self.update_button)
+        update_row.addStretch(1)
+        layout.addLayout(update_row)
+        return page
+
+    def _build_skill_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(24, 22, 24, 20)
+        layout.setSpacing(12)
+
+        intro = QLabel(self._t("about_skill_intro"))
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+        actions = QHBoxLayout()
+        download_button = QPushButton(self._t("about_skill_download"))
+        download_button.setObjectName("skillDownloadButton")
+        download_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(SKILL_DOWNLOAD_URL)))
+        open_button = QPushButton(self._t("about_skill_open"))
+        open_button.setObjectName("skillGuideButton")
+        open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(SKILL_PROJECT_URL)))
+        actions.addWidget(download_button)
+        actions.addWidget(open_button)
+        actions.addStretch(1)
+        layout.addLayout(actions)
+
+        guide = QPlainTextEdit()
+        guide.setReadOnly(True)
+        guide.setPlainText(self._t("about_skill_steps"))
+        guide.setFont(QFont("Consolas", 10))
+        layout.addWidget(guide, 1)
+        return page
+
+    def _build_support_page(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.setContentsMargins(22, 20, 22, 20)
+        layout.setSpacing(14)
+
+        message = QLabel(self._t("about_support_message"))
+        message.setWordWrap(True)
+        message.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(message)
+
+        codes = QHBoxLayout()
+        codes.setSpacing(20)
+        codes.addWidget(self._donation_column(ASSETS_DIR / "donate-alipay.jpg", self._t("about_alipay")), 1)
+        codes.addWidget(self._donation_column(ASSETS_DIR / "donate-wechat.png", self._t("about_wechat")), 1)
+        layout.addLayout(codes, 1)
+        return page
+
+    def _donation_column(self, path: Path, title: str) -> QWidget:
+        column = QWidget()
+        layout = QVBoxLayout(column)
+        layout.setContentsMargins(0, 0, 0, 0)
+        heading = QLabel(title)
+        heading.setObjectName("sectionTitle")
+        heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(heading)
+        layout.addWidget(self._qr_label(path), 1)
+        return column
 
     def _qr_label(self, path: Path) -> QLabel:
         label = QLabel()
+        label.setObjectName(f"qr_{path.stem}")
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pixmap = QPixmap(str(path))
         if not pixmap.isNull():
             if path.name == "donate-alipay.jpg":
                 pixmap = pixmap.copy(
-                    int(pixmap.width() * 0.18),
-                    int(pixmap.height() * 0.30),
-                    int(pixmap.width() * 0.64),
-                    int(pixmap.height() * 0.36),
+                    int(pixmap.width() * 0.16),
+                    int(pixmap.height() * 0.29),
+                    int(pixmap.width() * 0.68),
+                    int(pixmap.height() * 0.39),
                 )
             elif path.name == "donate-wechat.png":
                 pixmap = pixmap.copy(
-                    int(pixmap.width() * 0.29),
-                    int(pixmap.height() * 0.155),
-                    int(pixmap.width() * 0.415),
-                    int(pixmap.height() * 0.415),
+                    int(pixmap.width() * 0.255),
+                    int(pixmap.height() * 0.12),
+                    int(pixmap.width() * 0.49),
+                    int(pixmap.height() * 0.49),
                 )
             label.setPixmap(
                 pixmap.scaled(
-                    250,
-                    250,
+                    290,
+                    290,
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation,
                 )
@@ -653,6 +768,29 @@ class VirtualPortDialog(QDialog):
     def _t(self, key: str, **values: Any) -> Any:
         return ui_text(self.language, key, **values)
 
+    def _port_stepper(self, widget: QSpinBox, name: str) -> QWidget:
+        widget.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+        editor = QWidget()
+        layout = QHBoxLayout(editor)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(5)
+        decrease = QToolButton()
+        decrease.setObjectName(f"decrease_{name}")
+        decrease.setText("−")
+        decrease.setFixedSize(30, 30)
+        decrease.setToolTip(self._t("vp_port_decrease"))
+        decrease.clicked.connect(widget.stepDown)
+        increase = QToolButton()
+        increase.setObjectName(f"increase_{name}")
+        increase.setText("+")
+        increase.setFixedSize(30, 30)
+        increase.setToolTip(self._t("vp_port_increase"))
+        increase.clicked.connect(widget.stepUp)
+        layout.addWidget(decrease)
+        layout.addWidget(widget, 1)
+        layout.addWidget(increase)
+        return editor
+
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
         intro = QLabel(self._t("vp_intro"))
@@ -682,10 +820,10 @@ class VirtualPortDialog(QDialog):
         self.port_b_spin.setValue(11)
         self.port_b_spin.setPrefix("COM")
         grid.addWidget(QLabel(self._t("vp_port_a")), 1, 0)
-        grid.addWidget(self.port_a_spin, 1, 1)
+        grid.addWidget(self._port_stepper(self.port_a_spin, "port_a"), 1, 1)
         grid.addWidget(QLabel("↔"), 1, 2, alignment=Qt.AlignmentFlag.AlignCenter)
         grid.addWidget(QLabel(self._t("vp_port_b")), 1, 3)
-        grid.addWidget(self.port_b_spin, 1, 4)
+        grid.addWidget(self._port_stepper(self.port_b_spin, "port_b"), 1, 4)
         layout.addLayout(grid)
 
         self.driver_status = QLabel()
@@ -878,6 +1016,8 @@ class SerialConsole(QMainWindow):
         self.rx_buffer = bytearray()
         self.last_rx_at = 0.0
         self.language = "zh"
+        self.baudrate_user_edited = False
+        self.last_valid_baudrate = 9600
 
         self.resize(1380, 840)
         self.setMinimumSize(1050, 680)
@@ -954,10 +1094,17 @@ class SerialConsole(QMainWindow):
         middle_form.addRow(self.endpoint_label, port_row)
 
         self.baudrate_label = QLabel()
-        self.baudrate_spin = QSpinBox()
-        self.baudrate_spin.setRange(50, 4_000_000)
-        self.baudrate_spin.setValue(9600)
-        middle_form.addRow(self.baudrate_label, self.baudrate_spin)
+        self.baudrate_combo = QComboBox()
+        self.baudrate_combo.setEditable(True)
+        self.baudrate_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.baudrate_combo.addItems([str(value) for value in COMMON_BAUDRATES])
+        self.baudrate_combo.setCurrentText("9600")
+        baudrate_editor = self.baudrate_combo.lineEdit()
+        if baudrate_editor is not None:
+            baudrate_editor.setValidator(QIntValidator(50, 4_000_000, self.baudrate_combo))
+            baudrate_editor.editingFinished.connect(self._commit_baudrate_edit)
+        self.baudrate_combo.activated.connect(self._mark_baudrate_user_edited)
+        middle_form.addRow(self.baudrate_label, self.baudrate_combo)
         settings_layout.addLayout(middle_form, 3)
 
         serial_form = QFormLayout()
@@ -1140,6 +1287,43 @@ class SerialConsole(QMainWindow):
     def _show_about(self) -> None:
         AboutDialog(self.language, self).exec()
 
+    def _set_baudrate_value(self, value: int) -> None:
+        baudrate = int(value)
+        if not 50 <= baudrate <= 4_000_000:
+            raise ValueError(self._t("baudrate_invalid"))
+        text = str(baudrate)
+        if self.baudrate_combo.findText(text) < 0:
+            self.baudrate_combo.addItem(text)
+        self.baudrate_combo.setCurrentText(text)
+        self.last_valid_baudrate = baudrate
+
+    def _current_baudrate(self) -> int:
+        text = self.baudrate_combo.currentText().strip()
+        if not text.isdigit():
+            raise ValueError(self._t("baudrate_invalid"))
+        baudrate = int(text)
+        if not 50 <= baudrate <= 4_000_000:
+            raise ValueError(self._t("baudrate_invalid"))
+        return baudrate
+
+    def _apply_baudrate_edit(self) -> None:
+        try:
+            baudrate = self._current_baudrate()
+            self._set_baudrate_value(baudrate)
+            if self.serial_port is not None:
+                self.serial_port.baudrate = baudrate
+        except (ValueError, serial.SerialException) as exc:
+            self.baudrate_combo.setCurrentText(str(self.last_valid_baudrate))
+            QMessageBox.warning(self, self._t("connection_failed"), str(exc))
+
+    def _mark_baudrate_user_edited(self, *_args: Any) -> None:
+        self.baudrate_user_edited = True
+        self._apply_baudrate_edit()
+
+    def _commit_baudrate_edit(self) -> None:
+        self.baudrate_user_edited = True
+        self._apply_baudrate_edit()
+
     def _apply_style(self) -> None:
         mono = QFont("Consolas")
         mono.setStyleHint(QFont.StyleHint.Monospace)
@@ -1194,7 +1378,8 @@ class SerialConsole(QMainWindow):
         self.protocol_path = path
         self.protocol_label.setText(f"{localized_value(protocol, 'name', self.language)}  ·  {path.name}")
         defaults = protocol["serial"]["defaults"]
-        self.baudrate_spin.setValue(defaults["baudrate"])
+        self.baudrate_user_edited = False
+        self._set_baudrate_value(defaults["baudrate"])
         self.bytesize_combo.setCurrentText(str(defaults.get("bytesize", 8)))
         parity_index = self.parity_combo.findData(defaults.get("parity", "N"))
         self.parity_combo.setCurrentIndex(max(0, parity_index))
@@ -1295,7 +1480,7 @@ class SerialConsole(QMainWindow):
                     raise ValueError(self._t("endpoint_required"))
                 self.serial_port = serial.serial_for_url(
                     endpoint,
-                    baudrate=self.baudrate_spin.value(),
+                    baudrate=self._current_baudrate(),
                     bytesize=int(self.bytesize_combo.currentText()),
                     parity=self.parity_combo.currentData(),
                     stopbits=float(self.stopbits_combo.currentText()),
@@ -1334,8 +1519,9 @@ class SerialConsole(QMainWindow):
         self.statusBar().showMessage(self._t("closed_status"))
 
     def _set_command_baudrate(self, command: dict[str, Any]) -> None:
-        baudrate = command.get("baudrate", self._serial_defaults()["baudrate"])
-        self.baudrate_spin.setValue(baudrate)
+        if not self.baudrate_user_edited:
+            self._set_baudrate_value(command.get("baudrate", self._serial_defaults()["baudrate"]))
+        baudrate = self._current_baudrate()
         if self.serial_port is not None:
             self.serial_port.baudrate = baudrate
 
@@ -1446,13 +1632,21 @@ class SerialConsole(QMainWindow):
     def _handle_received_frame(self, data: bytes, known_command: dict[str, Any] | None = None) -> None:
         command = known_command
         passive_frame: dict[str, Any] | None = None
+        matched_request = False
         if command is None and self.protocol:
             try:
-                passive_frame = find_matching_frame(data, self.protocol.get("frames", []))
-                if passive_frame is None and self.role_combo.currentData() == "device":
+                if self.role_combo.currentData() == "device":
                     command = find_matching_command(data, self.protocol["commands"])
-                elif passive_frame is None:
-                    command = self.last_command
+                    matched_request = command is not None
+                    if command is None:
+                        passive_frame = find_matching_frame(data, self.protocol.get("frames", []))
+                else:
+                    passive_frame = find_matching_frame(data, self.protocol.get("frames", []))
+                    if passive_frame is None:
+                        command = find_matching_command(data, self.protocol["commands"])
+                        matched_request = command is not None
+                    if passive_frame is None and command is None:
+                        command = self.last_command
             except ProtocolError as exc:
                 self._report_runtime_error(exc)
         elif self.protocol:
@@ -1463,6 +1657,8 @@ class SerialConsole(QMainWindow):
         definition = passive_frame or command
         if passive_frame:
             frame_spec = passive_frame
+        elif command and matched_request:
+            frame_spec = command.get("request")
         elif command and self.role_combo.currentData() == "host":
             frame_spec = command.get("response")
         elif command:
@@ -1477,6 +1673,14 @@ class SerialConsole(QMainWindow):
         )
         if command and self.role_combo.currentData() == "device" and command.get("auto_reply") and has_reply_behavior:
             QTimer.singleShot(50, lambda: self._send_automatic_response(command))
+        elif self.role_combo.currentData() == "device" and command and matched_request:
+            command_name = localized_value(command, "name", self.language, command.get("id", self._t("unmatched")))
+            self.statusBar().showMessage(self._t("rx_auto_reply_disabled", command=command_name))
+        elif self.role_combo.currentData() == "device" and command is None and passive_frame is None:
+            self.statusBar().showMessage(self._t("rx_device_unmatched", count=len(data)))
+        elif self.role_combo.currentData() == "host" and command and matched_request:
+            command_name = localized_value(command, "name", self.language, command.get("id", self._t("unmatched")))
+            self.statusBar().showMessage(self._t("rx_host_request", command=command_name))
 
     def _send_automatic_response(self, command: dict[str, Any]) -> None:
         if not self.connected:

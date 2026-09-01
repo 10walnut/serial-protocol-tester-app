@@ -16,7 +16,8 @@
 - 通讯历史可回选，任意 TX/RX 行都能重新显示该帧的逐字节解释。
 - 支持帧头、长度字段、分包和粘包；重复历史记录保留原始数据，但复用一套字段说明。
 - 支持物理 COM、pyserial URL、内部虚拟链路和 com0com 虚拟串口对。
-- 关于窗口包含版本、作者、项目地址、检查更新和赞赏二维码。
+- 波特率从协议或命令预加载，可从常用值下拉选择，也可手动输入 50-4000000；手动值会覆盖后续命令预设并立即应用到已打开的串口。
+- 关于窗口包含版本、作者、项目地址、检查更新、Skill 下载与使用教程，以及并列显示的微信/支付宝赞赏码。
 
 ### 下载与启动
 
@@ -44,6 +45,12 @@ cd serial-protocol-tester-app
 4. 打开连接，双击命令或点击主操作按钮。
 5. 如果帧有变量，填写参数后点击“生成并发送”。
 6. 在右侧选择任意历史行，检查每个字节的功能、原始值、计算过程和结果。
+
+### 收到请求但没有自动回复
+
+自动回复只在“下位机”角色执行。用另一个串口助手测试时，本软件选择“下位机 + 串口”，打开虚拟串口对的一端；串口助手打开另一端并以 HEX 模式发送完整请求帧。软件匹配 `commands[].request` 后发送 `response`，再按配置发送 `follow_up_replies`。
+
+若当前选择“上位机”，软件仍会显示并解析收到的数据，但不会把请求当作设备命令自动应答；状态栏会提示切换为下位机。下位机收到数据仍不回复时，请依次检查：JSON 中命令是否启用 `auto_reply`、两端串口参数是否一致、发送内容是否包含完整帧及正确校验、协议中的长度和帧头规则是否与实际数据一致。
 
 ### 多段应答与 100 ms 实时数据
 
@@ -108,6 +115,6 @@ Download the Windows executable from [GitHub Releases](https://github.com/10waln
 
 For two-application testing, install the official [com0com 3.0.0.0 signed package](https://sourceforge.net/projects/com0com/files/com0com/3.0.0.0/com0com-3.0.0.0-i386-and-x64-signed.zip/download), remove legacy direct `PortName=COM10` pairs, and recreate COM10/COM11 from the application's Virtual Ports dialog. Success requires both names to appear under Windows **Ports (COM & LPT)** and in pyserial enumeration. Some Secure Boot configurations can still reject this older driver with Code 52; the application never disables Windows signature enforcement.
 
-Load a JSON file, choose Host or Device, open an internal or serial transport, and run a command. In Device mode, `response` is sent first, `follow_up_replies` schedules additional frames, and `stop_streams` cancels them. Select any traffic row to inspect its original bytes and calculations.
+Load a JSON file, choose Host or Device, open an internal or serial transport, and run a command. Baud rate is preloaded from the protocol but remains editable through a common-value dropdown or direct input. In Device mode, an incoming matching request sends `response` first, `follow_up_replies` schedules additional frames, and `stop_streams` cancels them. Host mode records incoming requests but intentionally does not auto-reply. Select any traffic row to inspect its original bytes and calculations.
 
 The companion [Serial Protocol Tester Skill](https://github.com/10walnut/serial-protocol-tester-skill) converts protocol documents for Codex, Claude Code, WorkBuddy, Harness, Doubao, and other agents. Thanks to the [com0com project](https://sourceforge.net/projects/com0com/) and its contributors; the driver is GPL software and is linked rather than redistributed here. Application code is MIT licensed.
