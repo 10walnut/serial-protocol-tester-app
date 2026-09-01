@@ -11,6 +11,7 @@ from PySide6.QtCore import QTimer, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QFont, QIcon
 from PySide6.QtWidgets import (
     QApplication,
+    QAbstractSpinBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -32,6 +33,7 @@ from PySide6.QtWidgets import (
     QStatusBar,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -51,9 +53,12 @@ from protocol_core import (
 from virtual_ports import (
     COM0COM_DOWNLOAD_URL,
     VirtualPortError,
+    count_unassigned_ports,
     find_setupc,
     launch_elevated_install,
     list_virtual_pairs,
+    query_com0com_driver_problems,
+    virtual_ports_ready,
 )
 
 
@@ -106,6 +111,7 @@ UI_TEXT = {
         "traffic": "通讯记录与返回解析",
         "log_headers": ["时间", "方向", "命令", "原始 HEX", "文本"],
         "decoded_fields": "发送/接收数据解释",
+        "decoded_fields_selected": "发送/接收数据解释 · {time} {direction} · {command}",
         "clear": "清空",
         "decoded_headers": ["方向", "字节位置", "字段", "功能/作用", "原始字节", "类型/规则", "计算过程", "结果"],
         "ready": "就绪",
@@ -156,12 +162,19 @@ UI_TEXT = {
         "vp_conflict_message": "以下端口已存在：{ports}\n请选择其他端口号。",
         "vp_uac_title": "确认创建虚拟串口",
         "vp_uac_message": "将创建 {port_a} ↔ {port_b}。Windows 随后会显示管理员权限确认窗口。是否继续？",
-        "vp_started_title": "已启动创建",
-        "vp_started_message": "已请求创建 {port_a} ↔ {port_b}。请完成 UAC 和驱动确认，然后点击“刷新状态”。",
         "vp_error_title": "虚拟串口错误",
+        "vp_driver_unsigned": "检测到 {count} 个失效的 com0com 设备：错误代码 52，Windows 无法验证驱动数字签名。请卸载当前 com0com，安装与当前 Windows 匹配的已签名版本并重启；软件已停止创建，以免继续产生无效设备。",
+        "vp_driver_problem": "检测到 {count} 个 com0com 驱动异常（{codes}）。请先在设备管理器中修复或重新安装驱动。",
+        "vp_unassigned": "检测到 {count} 个未完成的 COM# 端口。请先修复或卸载这些失效设备，再创建新端口对。",
+        "vp_creating": "正在创建并验证 {port_a} ↔ {port_b}，请完成 Windows 管理员确认…",
+        "vp_created_title": "虚拟串口已创建",
+        "vp_created_message": "已验证 {port_a} ↔ {port_b}，两个端口现在可供软件使用。",
+        "vp_verify_failed": "创建命令已运行，但在等待期间没有检测到 {port_a} 和 {port_b}。请查看上方驱动状态和设备管理器。",
         "variable_title": "输入发送参数：{command}",
         "variable_ok": "生成并发送",
         "variable_cancel": "取消",
+        "variable_decrease": "减少 {label}",
+        "variable_increase": "增加 {label}",
     },
     "en": {
         "title": "Serial Protocol Tester",
@@ -200,6 +213,7 @@ UI_TEXT = {
         "traffic": "Traffic and decoded response",
         "log_headers": ["Time", "Direction", "Command", "Raw HEX", "Text"],
         "decoded_fields": "Transmitted/received data details",
+        "decoded_fields_selected": "Transmitted/received data details · {time} {direction} · {command}",
         "clear": "Clear",
         "decoded_headers": ["Direction", "Bytes", "Field", "Purpose", "Raw bytes", "Type/rule", "Calculation", "Result"],
         "ready": "Ready",
@@ -250,12 +264,19 @@ UI_TEXT = {
         "vp_conflict_message": "These ports already exist: {ports}\nChoose different port numbers.",
         "vp_uac_title": "Confirm virtual port creation",
         "vp_uac_message": "Create {port_a} ↔ {port_b}? Windows will request administrator approval.",
-        "vp_started_title": "Creation started",
-        "vp_started_message": "Creation of {port_a} ↔ {port_b} was requested. Complete the UAC and driver prompts, then click Refresh status.",
         "vp_error_title": "Virtual port error",
+        "vp_driver_unsigned": "Detected {count} failed com0com devices: error 52 means Windows cannot verify the driver signature. Uninstall this com0com build, install a signed version compatible with this Windows release, and reboot. Creation is blocked to avoid more invalid devices.",
+        "vp_driver_problem": "Detected {count} com0com driver problems ({codes}). Repair or reinstall the driver in Device Manager first.",
+        "vp_unassigned": "Detected {count} unfinished COM# ports. Repair or remove these failed devices before creating another pair.",
+        "vp_creating": "Creating and verifying {port_a} ↔ {port_b}; complete the Windows administrator prompt…",
+        "vp_created_title": "Virtual ports created",
+        "vp_created_message": "Verified {port_a} ↔ {port_b}. Both ports are now available to applications.",
+        "vp_verify_failed": "The creation command ran, but {port_a} and {port_b} were not detected before timeout. Check the driver status above and Device Manager.",
         "variable_title": "Enter transmit values: {command}",
         "variable_ok": "Build and send",
         "variable_cancel": "Cancel",
+        "variable_decrease": "Decrease {label}",
+        "variable_increase": "Increase {label}",
     },
 }
 
@@ -307,14 +328,17 @@ class VariableInputDialog(QDialog):
                 widget.setCurrentIndex(max(0, index))
             elif variable.get("type", "integer") == "number":
                 widget = QDoubleSpinBox()
-                widget.setDecimals(int(variable.get("decimals", 3)))
+                decimals = int(variable.get("decimals", 3))
+                widget.setDecimals(decimals)
                 widget.setRange(float(variable.get("min", -1_000_000_000)), float(variable.get("max", 1_000_000_000)))
+                widget.setSingleStep(float(variable.get("step", 10 ** -decimals)))
                 widget.setValue(float(defaults.get(name, 0)))
             else:
                 widget = QSpinBox()
                 minimum = max(-2_147_483_648, int(variable.get("min", -2_147_483_648)))
                 maximum = min(2_147_483_647, int(variable.get("max", 2_147_483_647)))
                 widget.setRange(minimum, maximum)
+                widget.setSingleStep(max(1, int(variable.get("step", 1))))
                 widget.setValue(int(defaults.get(name, 0)))
             purpose = localized_value(variable, "purpose", language, localized_value(variable, "description", language))
             formulae = [
@@ -327,7 +351,31 @@ class VariableInputDialog(QDialog):
                 formula_label = "公式" if language == "zh" else "Formula"
                 tooltip = f"{tooltip}\n{formula_label}: {', '.join(formulae)}".strip()
             widget.setToolTip(tooltip)
-            form.addRow(label, widget)
+            if isinstance(widget, (QSpinBox, QDoubleSpinBox)):
+                widget.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)
+                widget.setMinimumWidth(180)
+                editor = QWidget()
+                editor_layout = QHBoxLayout(editor)
+                editor_layout.setContentsMargins(0, 0, 0, 0)
+                editor_layout.setSpacing(6)
+                decrease = QToolButton()
+                decrease.setText("−")
+                decrease.setFixedSize(30, 30)
+                decrease.setObjectName(f"decrease_{name}")
+                decrease.setToolTip(ui_text(language, "variable_decrease", label=label))
+                decrease.clicked.connect(widget.stepDown)
+                increase = QToolButton()
+                increase.setText("+")
+                increase.setFixedSize(30, 30)
+                increase.setObjectName(f"increase_{name}")
+                increase.setToolTip(ui_text(language, "variable_increase", label=label))
+                increase.clicked.connect(widget.stepUp)
+                editor_layout.addWidget(decrease)
+                editor_layout.addWidget(widget, 1)
+                editor_layout.addWidget(increase)
+                form.addRow(label, editor)
+            else:
+                form.addRow(label, widget)
             self.widgets[name] = widget
         root.addLayout(form)
 
@@ -356,6 +404,8 @@ class VirtualPortDialog(QDialog):
         self.setWindowTitle(ui_text(language, "vp_title"))
         self.resize(700, 500)
         self.setMinimumSize(620, 430)
+        self.pending_ports: tuple[str, str] | None = None
+        self.pending_checks = 0
         self._build_ui()
         self._refresh_driver_state()
 
@@ -437,24 +487,54 @@ class VirtualPortDialog(QDialog):
 
     def _refresh_driver_state(self) -> None:
         setupc = self._selected_setupc()
-        self.create_button.setEnabled(setupc is not None)
+        problems = query_com0com_driver_problems()
+        self.create_button.setEnabled(setupc is not None and not problems and self.pending_ports is None)
         if setupc is None:
             self.driver_status.setText(self._t("vp_not_found"))
             self.driver_status.setStyleSheet("color: #9a4f00;")
             return
         self.setupc_edit.setText(str(setupc))
+        output = ""
+        try:
+            output = list_virtual_pairs(setupc)
+        except VirtualPortError as exc:
+            output = str(exc)
+        if problems:
+            unsigned = any(problem.code == 52 or problem.symbol == "CM_PROB_UNSIGNED_DRIVER" for problem in problems)
+            codes = ", ".join(sorted({str(problem.code or problem.symbol or "?") for problem in problems}))
+            message = self._t("vp_driver_unsigned", count=len(problems)) if unsigned else self._t(
+                "vp_driver_problem", count=len(problems), codes=codes
+            )
+            details = "\n".join(
+                f"{problem.instance_id}: {problem.code or '?'} {problem.symbol}".rstrip() for problem in problems
+            )
+            self.driver_status.setText(message)
+            self.driver_status.setStyleSheet("color: #a12b1f; font-weight: 600;")
+            self.pair_output.setPlainText(f"{details}\n\n{output}".strip())
+            self.refresh_callback()
+            return
+        unassigned = count_unassigned_ports(output)
+        if unassigned:
+            self.create_button.setEnabled(False)
+            self.driver_status.setText(self._t("vp_unassigned", count=unassigned))
+            self.driver_status.setStyleSheet("color: #9a4f00; font-weight: 600;")
+            self.pair_output.setPlainText(output)
+            self.refresh_callback()
+            return
         self.driver_status.setText(self._t("vp_found", path=setupc))
         self.driver_status.setStyleSheet("color: #176b70; font-weight: 600;")
-        try:
-            self.pair_output.setPlainText(list_virtual_pairs(setupc))
-        except VirtualPortError as exc:
-            self.pair_output.setPlainText(str(exc))
+        self.pair_output.setPlainText(output)
         self.refresh_callback()
 
     def _create_pair(self) -> None:
         setupc = self._selected_setupc()
         if setupc is None:
             QMessageBox.warning(self, self._t("vp_driver_missing_title"), self._t("vp_driver_missing_message"))
+            return
+        problems = query_com0com_driver_problems()
+        if problems:
+            self._refresh_driver_state()
+            QMessageBox.critical(self, self._t("vp_error_title"), self.driver_status.text())
             return
         port_a = f"COM{self.port_a_spin.value()}"
         port_b = f"COM{self.port_b_spin.value()}"
@@ -482,12 +562,45 @@ class VirtualPortDialog(QDialog):
         except VirtualPortError as exc:
             QMessageBox.critical(self, self._t("vp_error_title"), str(exc))
             return
-        QMessageBox.information(
-            self,
-            self._t("vp_started_title"),
-            self._t("vp_started_message", port_a=port_a, port_b=port_b),
-        )
-        QTimer.singleShot(3000, self._refresh_driver_state)
+        self.pending_ports = (port_a, port_b)
+        self.pending_checks = 0
+        self.create_button.setEnabled(False)
+        self.driver_status.setText(self._t("vp_creating", port_a=port_a, port_b=port_b))
+        self.driver_status.setStyleSheet("color: #176b70; font-weight: 600;")
+        QTimer.singleShot(1500, self._verify_created_pair)
+
+    def _verify_created_pair(self) -> None:
+        if self.pending_ports is None:
+            return
+        port_a, port_b = self.pending_ports
+        self.pending_checks += 1
+        problems = query_com0com_driver_problems()
+        setupc = self._selected_setupc()
+        output = ""
+        if setupc is not None:
+            try:
+                output = list_virtual_pairs(setupc)
+            except VirtualPortError as exc:
+                output = str(exc)
+        available = [port.device for port in list_ports.comports()]
+        if not problems and virtual_ports_ready(port_a, port_b, available, output):
+            self.pending_ports = None
+            self._refresh_driver_state()
+            QMessageBox.information(
+                self,
+                self._t("vp_created_title"),
+                self._t("vp_created_message", port_a=port_a, port_b=port_b),
+            )
+            return
+        if problems or self.pending_checks >= 20:
+            self.pending_ports = None
+            self._refresh_driver_state()
+            message = self.driver_status.text() if problems else self._t(
+                "vp_verify_failed", port_a=port_a, port_b=port_b
+            )
+            QMessageBox.critical(self, self._t("vp_error_title"), message)
+            return
+        QTimer.singleShot(1500, self._verify_created_pair)
 
 
 class SerialConsole(QMainWindow):
@@ -498,8 +611,7 @@ class SerialConsole(QMainWindow):
         self.serial_port: serial.SerialBase | None = None
         self.connected = False
         self.last_command: dict[str, Any] | None = None
-        self.last_tx_context: tuple[bytes, dict[str, Any] | None] | None = None
-        self.last_rx_context: tuple[bytes, dict[str, Any] | None] | None = None
+        self.log_entries: list[dict[str, Any]] = []
         self.variable_values: dict[str, dict[str, Any]] = {}
         self.rx_buffer = bytearray()
         self.last_rx_at = 0.0
@@ -649,8 +761,10 @@ class SerialConsole(QMainWindow):
         self.log_table.setHorizontalHeaderLabels(["", "", "", "", ""])
         self.log_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.log_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.log_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.log_table.setAlternatingRowColors(True)
         self.log_table.verticalHeader().setVisible(False)
+        self.log_table.itemSelectionChanged.connect(self._show_selected_log_details)
         log_header = self.log_table.horizontalHeader()
         log_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         log_header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
@@ -773,7 +887,7 @@ class SerialConsole(QMainWindow):
             QPushButton:disabled { color: #8b969c; background: #edf0f1; }
             QPushButton#primaryButton { color: #ffffff; background: #176b70; border-color: #176b70; font-weight: 600; }
             QPushButton#primaryButton:hover { background: #10585d; }
-            QComboBox, QSpinBox, QLineEdit { min-height: 28px; background: #ffffff;
+            QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit { min-height: 28px; background: #ffffff;
                                             border: 1px solid #b9c4ca; border-radius: 4px; padding: 0 6px; }
             QTableWidget { background: #ffffff; alternate-background-color: #f2f6f6;
                            border: 1px solid #cfd7dc; gridline-color: #dce3e6; }
@@ -1016,8 +1130,7 @@ class SerialConsole(QMainWindow):
                 raise serial.SerialException("serial port is not open")
             self.serial_port.write(data)
             self.serial_port.flush()
-        self._append_log(direction, data, command)
-        self._set_frame_context(direction, data, frame_spec)
+        self._append_log(direction, data, command, frame_spec)
 
     def _receive_internal_response(self, command: dict[str, Any]) -> None:
         if not self.connected or self.transport_combo.currentData() != "internal":
@@ -1070,7 +1183,6 @@ class SerialConsole(QMainWindow):
             except ProtocolError as exc:
                 self._report_runtime_error(exc)
         definition = passive_frame or command
-        self._append_log("RX", data, definition)
         if passive_frame:
             frame_spec = passive_frame
         elif command and self.role_combo.currentData() == "host":
@@ -1079,7 +1191,7 @@ class SerialConsole(QMainWindow):
             frame_spec = command.get("request")
         else:
             frame_spec = None
-        self._set_frame_context("RX", data, frame_spec)
+        self._append_log("RX", data, definition, frame_spec)
         if command and self.role_combo.currentData() == "host":
             self.last_command = command
         if command and self.role_combo.currentData() == "device" and command.get("auto_reply") and command.get("response"):
@@ -1094,7 +1206,13 @@ class SerialConsole(QMainWindow):
         except (ProtocolError, serial.SerialException, OSError) as exc:
             self._report_runtime_error(exc)
 
-    def _append_log(self, direction: str, data: bytes, command: dict[str, Any] | None) -> None:
+    def _append_log(
+        self,
+        direction: str,
+        data: bytes,
+        command: dict[str, Any] | None,
+        frame_spec: dict[str, Any] | None,
+    ) -> None:
         row = self.log_table.rowCount()
         self.log_table.insertRow(row)
         now = time.strftime("%H:%M:%S") + f".{int(time.time() * 1000) % 1000:03d}"
@@ -1105,6 +1223,15 @@ class SerialConsole(QMainWindow):
         except UnicodeDecodeError:
             text_preview = ""
         command_name = localized_value(command, "name", self.language, self._t("unmatched")) if command else self._t("unmatched")
+        self.log_entries.append(
+            {
+                "time": now,
+                "direction": direction,
+                "data": bytes(data),
+                "command": command,
+                "frame_spec": frame_spec,
+            }
+        )
         values = [now, direction, command_name, format_hex(data), text_preview]
         for column, value in enumerate(values):
             item = QTableWidgetItem(value)
@@ -1113,16 +1240,13 @@ class SerialConsole(QMainWindow):
                 item.setForeground(Qt.GlobalColor.darkGreen if direction == "RX" else Qt.GlobalColor.darkBlue)
             self.log_table.setItem(row, column, item)
         self.log_table.scrollToBottom()
+        self.log_table.selectRow(row)
+        self._render_frame_details()
         self.statusBar().showMessage(
             self._t("traffic_status", direction=direction, count=len(data), command=command_name)
         )
 
-    def _set_frame_context(self, direction: str, data: bytes, frame_spec: dict[str, Any] | None) -> None:
-        context = (data, frame_spec)
-        if direction == "TX":
-            self.last_tx_context = context
-        else:
-            self.last_rx_context = context
+    def _show_selected_log_details(self) -> None:
         self._render_frame_details()
 
     def _render_frame_details(self) -> None:
@@ -1130,12 +1254,26 @@ class SerialConsole(QMainWindow):
             return
         framing = self.protocol.get("framing") if self.protocol else None
         details: list[dict[str, str]] = []
-        for direction, context in (("TX", self.last_tx_context), ("RX", self.last_rx_context)):
-            if context is None:
-                continue
-            data, frame_spec = context
+        row = self.log_table.currentRow() if hasattr(self, "log_table") else -1
+        entry = self.log_entries[row] if 0 <= row < len(self.log_entries) else None
+        if entry is not None:
+            direction = entry["direction"]
+            data = entry["data"]
+            frame_spec = entry["frame_spec"]
             for field in decode_frame_details(data, frame_spec, framing, self.language):
                 details.append({"direction": direction, **field})
+            command = entry["command"]
+            command_name = localized_value(command, "name", self.language, self._t("unmatched")) if command else self._t("unmatched")
+            self.decoded_fields_label.setText(
+                self._t(
+                    "decoded_fields_selected",
+                    time=entry["time"],
+                    direction=direction,
+                    command=command_name,
+                )
+            )
+        else:
+            self.decoded_fields_label.setText(self._t("decoded_fields"))
         self.decoded_table.setRowCount(len(details))
         for row, field in enumerate(details):
             values = [
@@ -1157,8 +1295,7 @@ class SerialConsole(QMainWindow):
 
     def _clear_output(self) -> None:
         self.log_table.setRowCount(0)
-        self.last_tx_context = None
-        self.last_rx_context = None
+        self.log_entries.clear()
         self.decoded_table.setRowCount(0)
         self.statusBar().showMessage(self._t("output_cleared"))
 

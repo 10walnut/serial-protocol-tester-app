@@ -814,6 +814,9 @@ def _validate_variables(variables: Any, path: str, errors: list[str]) -> set[str
             errors.append(f"{item_path}.min must be numeric")
         if maximum is not None and not isinstance(maximum, (int, float)):
             errors.append(f"{item_path}.max must be numeric")
+        step = variable.get("step")
+        if step is not None and (not isinstance(step, (int, float)) or step <= 0):
+            errors.append(f"{item_path}.step must be a positive number")
     return names
 
 

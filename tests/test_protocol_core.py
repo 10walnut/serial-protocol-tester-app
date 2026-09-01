@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import sys
 import unittest
 from pathlib import Path
@@ -20,6 +21,7 @@ from protocol_core import (  # noqa: E402
     localized_value,
     modbus_crc16,
     split_framed_bytes,
+    validate_protocol_data,
 )
 
 
@@ -96,6 +98,12 @@ class ProtocolCoreTests(unittest.TestCase):
         frame = bytes.fromhex("AA 55 10 00 10")
         match = find_matching_frame(frame, [{"id": "data", "match": {"offset": 2, "data": "10"}}])
         self.assertEqual(match["id"], "data")
+
+    def test_variable_step_must_be_positive(self) -> None:
+        protocol = copy.deepcopy(self.protocol)
+        protocol["commands"][1]["request"]["variables"][0]["step"] = 0
+        errors = validate_protocol_data(protocol)
+        self.assertTrue(any(".step must be a positive number" in error for error in errors))
 
 
 if __name__ == "__main__":

@@ -19,6 +19,7 @@ $BuildRoot = Join-Path $RepoRoot "build"
 $DistRoot = Join-Path $RepoRoot "dist"
 $SpecRoot = Join-Path $BuildRoot "pyinstaller-spec"
 $WorkRoot = Join-Path $BuildRoot "pyinstaller-work"
+$StagingRoot = Join-Path $BuildRoot ("dist-staging-{0}" -f [guid]::NewGuid().ToString("N"))
 $LogDir = Join-Path $RepoRoot "logs"
 $LogPath = Join-Path $LogDir ("build-{0}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
 $AppName = "SerialProtocolTester"
@@ -121,7 +122,7 @@ try {
         if (-not (Test-VenvModule $Module)) { throw "Module verification failed after installation: $Module" }
     }
 
-    New-Item -ItemType Directory -Force -Path $BuildRoot, $DistRoot, $SpecRoot, $WorkRoot | Out-Null
+    New-Item -ItemType Directory -Force -Path $BuildRoot, $DistRoot, $SpecRoot, $WorkRoot, $StagingRoot | Out-Null
     $ModeArgument = if ($OneDir) { "--onedir" } else { "--onefile" }
     $Separator = if ($env:OS -eq "Windows_NT") { ";" } else { ":" }
     $AddData = "$SamplePath$Separator."
@@ -132,7 +133,7 @@ try {
         "--windowed",
         $ModeArgument,
         "--name", $AppName,
-        "--distpath", $DistRoot,
+        "--distpath", $StagingRoot,
         "--workpath", $WorkRoot,
         "--specpath", $SpecRoot,
         "--collect-submodules", "serial",
@@ -151,8 +152,8 @@ try {
     Write-Host "Running PyInstaller..."
     Invoke-Checked $VenvPython $Arguments "PyInstaller"
 
-    $OutputPath = if ($OneDir) { Join-Path $DistRoot $AppName } else { Join-Path $DistRoot "$AppName.exe" }
-    $ExecutablePath = if ($OneDir) { Join-Path $OutputPath "$AppName.exe" } else { $OutputPath }
+    $StagedOutputPath = if ($OneDir) { Join-Path $StagingRoot $AppName } else { Join-Path $StagingRoot "$AppName.exe" }
+    $ExecutablePath = if ($OneDir) { Join-Path $StagedOutputPath "$AppName.exe" } else { $StagedOutputPath }
     $AnalysisPath = Join-Path $WorkRoot "$AppName\Analysis-00.toc"
     if (Test-Path -LiteralPath $AnalysisPath) {
         $Contaminated = Select-String -LiteralPath $AnalysisPath -Pattern "codex-runtimes|poppler\\Library\\bin\\icu" -Quiet
@@ -174,6 +175,27 @@ try {
         throw "Packaged application self-test failed with exit code $($SelfTest.ExitCode)."
     }
     Write-Host "Packaged Qt self-test passed." -ForegroundColor Green
+
+    $Timestamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    if ($OneDir) {
+        $OutputPath = Join-Path $DistRoot $AppName
+        if (Test-Path -LiteralPath $OutputPath) {
+            $OutputPath = Join-Path $DistRoot "$AppName-$Timestamp"
+            Write-Warning "The standard output directory already exists. Using: $OutputPath"
+        }
+        Copy-Item -LiteralPath $StagedOutputPath -Destination $OutputPath -Recurse -Force
+    }
+    else {
+        $OutputPath = Join-Path $DistRoot "$AppName.exe"
+        try {
+            Copy-Item -LiteralPath $StagedOutputPath -Destination $OutputPath -Force -ErrorAction Stop
+        }
+        catch {
+            $OutputPath = Join-Path $DistRoot "$AppName-$Timestamp.exe"
+            Copy-Item -LiteralPath $StagedOutputPath -Destination $OutputPath -Force
+            Write-Warning "The standard executable is in use. The new build was saved as: $OutputPath"
+        }
+    }
     Write-Host "Build complete: $OutputPath" -ForegroundColor Green
     exit 0
 }
