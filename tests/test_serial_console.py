@@ -120,8 +120,12 @@ class SerialConsoleUiTests(unittest.TestCase):
         self.assertTrue(dialog.update_button.isEnabled())
         tabs = dialog.findChild(QTabWidget)
         self.assertEqual(tabs.count(), 3)
-        self.assertIsNotNone(dialog.findChild(QLabel, "qr_donate-alipay"))
-        self.assertIsNotNone(dialog.findChild(QLabel, "qr_donate-wechat"))
+        for name in ("qr_donate-alipay", "qr_donate-wechat"):
+            qr_label = dialog.findChild(QLabel, name)
+            self.assertIsNotNone(qr_label)
+            self.assertIsNotNone(qr_label.pixmap())
+            self.assertEqual(qr_label.pixmap().size().width(), 290)
+            self.assertEqual(qr_label.pixmap().size().height(), 290)
         dialog.close()
 
     def test_baudrate_is_preloaded_editable_and_manual_value_is_preserved(self) -> None:

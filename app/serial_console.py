@@ -83,7 +83,7 @@ ROOT = resource_root()
 SAMPLE_PROTOCOL = ROOT / "sample_protocol.json"
 ASSETS_DIR = ROOT / "assets"
 LOGO_PATH = ASSETS_DIR / "serial-protocol-tester-logo.png"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.2.1"
 AUTHOR = "十个核桃 / 10walnut"
 PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-app"
 SKILL_PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-skill"
@@ -581,20 +581,6 @@ class AboutDialog(QDialog):
         label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pixmap = QPixmap(str(path))
         if not pixmap.isNull():
-            if path.name == "donate-alipay.jpg":
-                pixmap = pixmap.copy(
-                    int(pixmap.width() * 0.16),
-                    int(pixmap.height() * 0.29),
-                    int(pixmap.width() * 0.68),
-                    int(pixmap.height() * 0.39),
-                )
-            elif path.name == "donate-wechat.png":
-                pixmap = pixmap.copy(
-                    int(pixmap.width() * 0.255),
-                    int(pixmap.height() * 0.12),
-                    int(pixmap.width() * 0.49),
-                    int(pixmap.height() * 0.49),
-                )
             label.setPixmap(
                 pixmap.scaled(
                     290,
