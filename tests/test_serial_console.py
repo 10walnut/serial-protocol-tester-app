@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import string
 import sys
 import unittest
 from pathlib import Path
@@ -15,14 +16,26 @@ sys.path.insert(0, str(APP_ROOT))
 
 from PySide6.QtCore import Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QAbstractSpinBox, QApplication, QLabel, QTabWidget, QToolButton
+from PySide6.QtWidgets import (
+    QAbstractSpinBox,
+    QApplication,
+    QLabel,
+    QPlainTextEdit,
+    QPushButton,
+    QTabWidget,
+    QToolButton,
+)
 
 from protocol_core import encode_frame
 from serial_console import (
     AboutDialog,
     COMMON_BAUDRATES,
+    LANGUAGE_OPTIONS,
     LOGO_PATH,
+    SKILL_DOWNLOAD_URL,
+    SKILL_PROJECT_URL,
     SerialConsole,
+    UI_TEXT,
     VariableInputDialog,
     VirtualPortDialog,
     version_key,
@@ -63,6 +76,50 @@ class SerialConsoleUiTests(unittest.TestCase):
         self.app.processEvents()
         self.assertEqual(value_widget.value(), 2)
         dialog.close()
+
+    def test_skill_buttons_open_download_and_guide_urls(self) -> None:
+        dialog = AboutDialog("zh")
+        guide = dialog.findChild(QPlainTextEdit)
+        self.assertIn("技能新建", guide.toPlainText())
+        self.assertIn("Skill ZIP", guide.toPlainText())
+
+        with patch("serial_console.open_external_url", return_value=True) as opener:
+            QTest.mouseClick(dialog.findChild(QPushButton, "skillDownloadButton"), Qt.MouseButton.LeftButton)
+            QTest.mouseClick(dialog.findChild(QPushButton, "skillGuideButton"), Qt.MouseButton.LeftButton)
+        self.assertEqual(opener.call_args_list[0].args, (SKILL_DOWNLOAD_URL,))
+        self.assertEqual(opener.call_args_list[1].args, (SKILL_PROJECT_URL,))
+        dialog.close()
+
+    def test_language_selector_exposes_ten_languages_and_retranslates(self) -> None:
+        window = SerialConsole()
+        self.assertEqual(window.language_combo.count(), 10)
+        self.assertEqual(
+            tuple(window.language_combo.itemData(i) for i in range(10)),
+            tuple(code for code, _ in LANGUAGE_OPTIONS),
+        )
+
+        spanish_index = window.language_combo.findData("es")
+        window.language_combo.setCurrentIndex(spanish_index)
+        self.app.processEvents()
+        self.assertEqual(window.language, "es")
+        self.assertEqual(window.windowTitle(), "Probador de protocolos serie")
+        self.assertEqual(window.load_button.text(), "Cargar protocolo")
+        window.close()
+
+    def test_all_languages_cover_every_key_and_preserve_placeholders(self) -> None:
+        formatter = string.Formatter()
+        english_keys = set(UI_TEXT["en"])
+        for language, _name in LANGUAGE_OPTIONS:
+            self.assertEqual(set(UI_TEXT[language]), english_keys)
+            for key, english_value in UI_TEXT["en"].items():
+                translated_value = UI_TEXT[language][key]
+                if not isinstance(english_value, str):
+                    continue
+                english_fields = {field for _text, field, _spec, _conversion in formatter.parse(english_value) if field}
+                translated_fields = {
+                    field for _text, field, _spec, _conversion in formatter.parse(translated_value) if field
+                }
+                self.assertEqual(translated_fields, english_fields, f"{language}.{key}")
 
     def test_selecting_history_row_redecodes_that_frame(self) -> None:
         window = SerialConsole()

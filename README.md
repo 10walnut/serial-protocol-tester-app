@@ -12,7 +12,7 @@
 - 下位机模式：匹配外部上位机请求，先发送确认帧，再按 JSON 配置发送延迟帧或周期帧。
 - 多段应答：`response` 表示立即确认，`follow_up_replies` 表示后续一次性或周期数据，`stop_streams` 负责停止指定数据流。
 - 变量组帧：日期、时间、地址、标定值、传感器值等由输入框提供，软件按受限公式写入帧并重新计算校验和。
-- 默认中文，右上角切换英文；协议名称和注释使用 JSON 自身的单一语言。
+- 默认简体中文，右上角可选择简体中文、English、हिन्दी、Español、العربية、Français、বাংলা、Português、Русский、اردو；协议名称和注释仍使用 JSON 自身的单一语言。
 - 通讯历史可回选，任意 TX/RX 行都能重新显示该帧的逐字节解释。
 - 支持帧头、长度字段、分包和粘包；重复历史记录保留原始数据，但复用一套字段说明。
 - 支持物理 COM、pyserial URL、内部虚拟链路和 com0com 虚拟串口对。
@@ -45,6 +45,8 @@ cd serial-protocol-tester-app
 4. 打开连接，双击命令或点击主操作按钮。
 5. 如果帧有变量，填写参数后点击“生成并发送”。
 6. 在右侧选择任意历史行，检查每个字节的功能、原始值、计算过程和结果。
+
+豆包安装 Skill：从 Skill 项目下载 ZIP，进入“技能新建”→“上传技能”，直接上传包含 `SKILL.md` 的完整 Skill ZIP 压缩包。软件“关于”窗口的“Skill 下载与使用”页也提供下载按钮、项目教程和对应提示词示例。
 
 ### 收到请求但没有自动回复
 
@@ -95,7 +97,7 @@ python -m unittest discover -s tests -p "test_*.py" -v
 .\build_serial_console.ps1
 ```
 
-打包脚本嵌入应用图标和程序内置的管理员自提升启动逻辑，隔离 Qt DLL 搜索路径，并运行打包后 `--self-test`。输出为 `dist\SerialProtocolTester.exe`。目录模式使用：
+打包脚本会从 PNG 自动生成包含 16、20、24、32、40、48、64、128、256 像素图层的 Windows ICO，再把外壳图标和管理员自提升启动逻辑嵌入 EXE；同时隔离 Qt DLL 搜索路径并运行打包后 `--self-test`。输出为 `dist\SerialProtocolTester.exe`。目录模式使用：
 
 ```powershell
 .\build_serial_console.ps1 -OneDir
@@ -115,6 +117,8 @@ Download the Windows executable from [GitHub Releases](https://github.com/10waln
 
 For two-application testing, install the official [com0com 3.0.0.0 signed package](https://sourceforge.net/projects/com0com/files/com0com/3.0.0.0/com0com-3.0.0.0-i386-and-x64-signed.zip/download), remove legacy direct `PortName=COM10` pairs, and recreate COM10/COM11 from the application's Virtual Ports dialog. Success requires both names to appear under Windows **Ports (COM & LPT)** and in pyserial enumeration. Some Secure Boot configurations can still reject this older driver with Code 52; the application never disables Windows signature enforcement.
 
-Load a JSON file, choose Host or Device, open an internal or serial transport, and run a command. Baud rate is preloaded from the protocol but remains editable through a common-value dropdown or direct input. In Device mode, an incoming matching request sends `response` first, `follow_up_replies` schedules additional frames, and `stop_streams` cancels them. Host mode records incoming requests but intentionally does not auto-reply. Select any traffic row to inspect its original bytes and calculations.
+Load a JSON file, choose Host or Device, open an internal or serial transport, and run a command. The interface offers Simplified Chinese, English, Hindi, Spanish, Arabic, French, Bengali, Portuguese, Russian, and Urdu. Baud rate is preloaded from the protocol but remains editable through a common-value dropdown or direct input. In Device mode, an incoming matching request sends `response` first, `follow_up_replies` schedules additional frames, and `stop_streams` cancels them. Host mode records incoming requests but intentionally does not auto-reply. Select any traffic row to inspect its original bytes and calculations.
+
+For Doubao, download the complete Skill ZIP, open **Create Skill > Upload Skill**, and upload the ZIP containing `SKILL.md` directly. The application's About dialog includes working download and guide buttons for this flow.
 
 The companion [Serial Protocol Tester Skill](https://github.com/10walnut/serial-protocol-tester-skill) converts protocol documents for Codex, Claude Code, WorkBuddy, Harness, Doubao, and other agents. Thanks to the [com0com project](https://sourceforge.net/projects/com0com/) and its contributors; the driver is GPL software and is linked rather than redistributed here. Application code is MIT licensed.

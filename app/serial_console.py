@@ -70,6 +70,7 @@ from virtual_ports import (
     query_com0com_driver_problems,
     virtual_ports_ready,
 )
+from i18n_extra import EXTRA_UI_TEXT, LANGUAGE_OPTIONS
 
 
 def resource_root() -> Path:
@@ -83,7 +84,7 @@ ROOT = resource_root()
 SAMPLE_PROTOCOL = ROOT / "sample_protocol.json"
 ASSETS_DIR = ROOT / "assets"
 LOGO_PATH = ASSETS_DIR / "serial-protocol-tester-logo.png"
-APP_VERSION = "1.2.1"
+APP_VERSION = "1.3.0"
 AUTHOR = "十个核桃 / 10walnut"
 PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-app"
 SKILL_PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-skill"
@@ -151,6 +152,15 @@ def relaunch_as_admin() -> bool:
             0x10,
         )
     return True
+
+
+def open_external_url(url: str) -> bool:
+    if os.name == "nt":
+        try:
+            return int(ctypes.windll.shell32.ShellExecuteW(None, "open", url, None, None, 1)) > 32
+        except (OSError, TypeError, ValueError):
+            return False
+    return QDesktopServices.openUrl(QUrl(url))
 
 
 UI_TEXT = {
@@ -263,6 +273,7 @@ UI_TEXT = {
         "variable_cancel": "取消",
         "variable_decrease": "减少 {label}",
         "variable_increase": "增加 {label}",
+        "formula": "公式",
         "about_tooltip": "关于与检查更新",
         "about_title": "关于串口协议测试器",
         "about_app": "串口协议测试器",
@@ -287,7 +298,9 @@ UI_TEXT = {
         "about_skill_intro": "Serial Protocol Tester Skill 可以读取协议文档并生成本软件可加载的 serial_protocol.v1 JSON。",
         "about_skill_download": "下载 Skill ZIP",
         "about_skill_open": "打开 Skill 项目与详细教程",
-        "about_skill_steps": "1. 下载并解压 Skill。\n\n2. Codex：运行 .\\install.ps1 -Target codex\n   Claude Code：运行 .\\install.ps1 -Target claude\n   WorkBuddy / Harness：按项目 README 选择对应目标。\n\n3. 豆包或其他无法扫描 Skill 目录的客户端：上传 SKILL.md、references/protocol-script-format.md 和原始协议。\n\n4. 提示词示例：\n使用 serial-protocol-tester Skill 读取协议，只输出中文 JSON；生成后运行校验器，并为每个发送和接收字段写明作用与计算公式。",
+        "about_skill_steps": "1. 下载 Skill ZIP。\n\n2. Codex：运行 .\\install.ps1 -Target codex\n   Claude Code：运行 .\\install.ps1 -Target claude\n   WorkBuddy / Harness：按项目 README 选择对应目标。\n\n3. 豆包：打开“技能新建”→“上传技能”，直接上传包含 SKILL.md 的 Skill ZIP 压缩包。\n\n4. 提示词示例：\n使用 serial-protocol-tester Skill 读取协议，只输出中文 JSON；生成后运行校验器，并为每个发送和接收字段写明作用与计算公式。",
+        "about_link_error_title": "无法打开链接",
+        "about_link_error_message": "无法调用默认浏览器打开：\n{url}",
     },
     "en": {
         "title": "Serial Protocol Tester",
@@ -398,6 +411,7 @@ UI_TEXT = {
         "variable_cancel": "Cancel",
         "variable_decrease": "Decrease {label}",
         "variable_increase": "Increase {label}",
+        "formula": "Formula",
         "about_tooltip": "About and check for updates",
         "about_title": "About Serial Protocol Tester",
         "about_app": "Serial Protocol Tester",
@@ -422,13 +436,17 @@ UI_TEXT = {
         "about_skill_intro": "Serial Protocol Tester Skill reads protocol documents and generates serial_protocol.v1 JSON files that this application can load.",
         "about_skill_download": "Download Skill ZIP",
         "about_skill_open": "Open Skill project and guide",
-        "about_skill_steps": "1. Download and extract the Skill.\n\n2. Codex: run .\\install.ps1 -Target codex\n   Claude Code: run .\\install.ps1 -Target claude\n   WorkBuddy / Harness: choose the matching target from the repository guide.\n\n3. For Doubao or clients without Skill-directory discovery, upload SKILL.md, references/protocol-script-format.md, and the source protocol.\n\n4. Example prompt:\nUse the serial-protocol-tester Skill, emit one-language JSON, run validation, and explain the purpose and calculation of every transmitted and received field.",
+        "about_skill_steps": "1. Download the Skill ZIP.\n\n2. Codex: run .\\install.ps1 -Target codex\n   Claude Code: run .\\install.ps1 -Target claude\n   WorkBuddy / Harness: choose the matching target from the repository guide.\n\n3. Doubao: open Create Skill > Upload Skill, then directly upload the Skill ZIP containing SKILL.md.\n\n4. Example prompt:\nUse the serial-protocol-tester Skill, emit one-language JSON, run validation, and explain the purpose and calculation of every transmitted and received field.",
+        "about_link_error_title": "Could not open link",
+        "about_link_error_message": "The default browser could not open:\n{url}",
     },
 }
 
+UI_TEXT.update(EXTRA_UI_TEXT)
+
 
 def ui_text(language: str, key: str, **values: Any) -> Any:
-    text = UI_TEXT[language][key]
+    text = UI_TEXT.get(language, UI_TEXT["en"]).get(key, UI_TEXT["en"][key])
     return text.format(**values) if isinstance(text, str) and values else text
 
 
@@ -530,10 +548,10 @@ class AboutDialog(QDialog):
         actions = QHBoxLayout()
         download_button = QPushButton(self._t("about_skill_download"))
         download_button.setObjectName("skillDownloadButton")
-        download_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(SKILL_DOWNLOAD_URL)))
+        download_button.clicked.connect(lambda _checked=False: self._open_url(SKILL_DOWNLOAD_URL))
         open_button = QPushButton(self._t("about_skill_open"))
         open_button.setObjectName("skillGuideButton")
-        open_button.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(SKILL_PROJECT_URL)))
+        open_button.clicked.connect(lambda _checked=False: self._open_url(SKILL_PROJECT_URL))
         actions.addWidget(download_button)
         actions.addWidget(open_button)
         actions.addStretch(1)
@@ -545,6 +563,14 @@ class AboutDialog(QDialog):
         guide.setFont(QFont("Consolas", 10))
         layout.addWidget(guide, 1)
         return page
+
+    def _open_url(self, url: str) -> None:
+        if not open_external_url(url):
+            QMessageBox.warning(
+                self,
+                self._t("about_link_error_title"),
+                self._t("about_link_error_message", url=url),
+            )
 
     def _build_support_page(self) -> QWidget:
         page = QWidget()
@@ -593,7 +619,7 @@ class AboutDialog(QDialog):
 
     def _update_button_clicked(self) -> None:
         if self.release_url:
-            QDesktopServices.openUrl(QUrl(self.release_url))
+            self._open_url(self.release_url)
             return
         self.release_url = ""
         self.update_button.setEnabled(False)
@@ -690,7 +716,7 @@ class VariableInputDialog(QDialog):
             ]
             tooltip = purpose
             if formulae:
-                formula_label = "公式" if language == "zh" else "Formula"
+                formula_label = ui_text(language, "formula")
                 tooltip = f"{tooltip}\n{formula_label}: {', '.join(formulae)}".strip()
             widget.setToolTip(tooltip)
             if isinstance(widget, (QSpinBox, QDoubleSpinBox)):
@@ -785,7 +811,7 @@ class VirtualPortDialog(QDialog):
 
         download_link = QLabel(f'<a href="{COM0COM_DOWNLOAD_URL}">{self._t("vp_download")}</a>')
         download_link.setOpenExternalLinks(False)
-        download_link.linkActivated.connect(lambda url: QDesktopServices.openUrl(QUrl(url)))
+        download_link.linkActivated.connect(open_external_url)
         layout.addWidget(download_link)
 
         grid = QGridLayout()
@@ -1031,16 +1057,20 @@ class SerialConsole(QMainWindow):
         self.protocol_label.setObjectName("protocolTitle")
         self.load_button = QPushButton()
         self.load_button.clicked.connect(self._choose_protocol)
-        self.language_button = QPushButton()
-        self.language_button.setFixedWidth(58)
-        self.language_button.clicked.connect(self._toggle_language)
+        self.language_combo = QComboBox()
+        self.language_combo.setObjectName("languageCombo")
+        self.language_combo.setMinimumWidth(145)
+        for code, name in LANGUAGE_OPTIONS:
+            self.language_combo.addItem(name, code)
+        self.language_combo.setCurrentIndex(self.language_combo.findData(self.language))
+        self.language_combo.currentIndexChanged.connect(self._change_language)
         self.about_button = QToolButton()
         self.about_button.setFixedSize(34, 34)
         self.about_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation))
         self.about_button.clicked.connect(self._show_about)
         file_row.addWidget(self.protocol_label, 1)
         file_row.addWidget(self.about_button)
-        file_row.addWidget(self.language_button)
+        file_row.addWidget(self.language_combo)
         file_row.addWidget(self.load_button)
         root.addLayout(file_row)
 
@@ -1210,13 +1240,14 @@ class SerialConsole(QMainWindow):
     def _t(self, key: str, **values: Any) -> Any:
         return ui_text(self.language, key, **values)
 
-    def _toggle_language(self) -> None:
-        self.language = "en" if self.language == "zh" else "zh"
-        self._retranslate_ui()
+    def _change_language(self, index: int) -> None:
+        language = self.language_combo.itemData(index)
+        if language and language != self.language:
+            self.language = language
+            self._retranslate_ui()
 
     def _retranslate_ui(self) -> None:
         self.setWindowTitle(self._t("title"))
-        self.language_button.setText(self._t("language_button"))
         self.about_button.setToolTip(self._t("about_tooltip"))
         self.load_button.setText(self._t("load_protocol"))
         self.settings_group.setTitle(self._t("connection"))

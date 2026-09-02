@@ -13,7 +13,9 @@ $AppDir = Join-Path $RepoRoot "app"
 $AppPath = Join-Path $AppDir "serial_console.py"
 $SamplePath = Join-Path $AppDir "sample_protocol.json"
 $AssetsPath = Join-Path $AppDir "assets"
+$LogoPath = Join-Path $AssetsPath "serial-protocol-tester-logo.png"
 $IconPath = Join-Path $AssetsPath "serial-protocol-tester-logo.ico"
+$IconGeneratorPath = Join-Path $RepoRoot "scripts\generate_windows_icon.py"
 $RequirementsPath = Join-Path $AppDir "requirements.txt"
 $VenvDir = Join-Path $AppDir ".venv"
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
@@ -85,7 +87,7 @@ try {
     catch { Write-Warning "Could not start transcript logging: $($_.Exception.Message)" }
 
     Write-Host "Build Serial Protocol Tester" -ForegroundColor Cyan
-    foreach ($RequiredPath in @($AppPath, $SamplePath, $RequirementsPath, $AssetsPath, $IconPath)) {
+    foreach ($RequiredPath in @($AppPath, $SamplePath, $RequirementsPath, $AssetsPath, $LogoPath, $IconGeneratorPath)) {
         if (-not (Test-Path -LiteralPath $RequiredPath)) { throw "Required file is missing: $RequiredPath" }
     }
 
@@ -122,6 +124,18 @@ try {
 
     foreach ($Module in @("PySide6", "serial", "PyInstaller")) {
         if (-not (Test-VenvModule $Module)) { throw "Module verification failed after installation: $Module" }
+    }
+
+    if ((-not (Test-Path -LiteralPath $IconPath)) -or
+        ((Get-Item -LiteralPath $LogoPath).LastWriteTimeUtc -gt (Get-Item -LiteralPath $IconPath).LastWriteTimeUtc)) {
+        Write-Host "Generating multi-size Windows icon..."
+        Invoke-Checked $VenvPython @($IconGeneratorPath, $LogoPath, $IconPath) "Windows icon generation"
+    }
+    $IconBytes = [System.IO.File]::ReadAllBytes($IconPath)
+    if ($IconBytes.Length -lt 6) { throw "Windows icon is invalid: $IconPath" }
+    $IconCount = [System.BitConverter]::ToUInt16($IconBytes, 4)
+    if ($IconCount -lt 7) {
+        throw "Windows icon must contain at least 7 sizes, but contains $IconCount. Regenerate it with scripts\generate_windows_icon.py."
     }
 
     New-Item -ItemType Directory -Force -Path $BuildRoot, $DistRoot, $SpecRoot, $WorkRoot, $StagingRoot | Out-Null
@@ -167,6 +181,18 @@ try {
         }
     }
     if (-not (Test-Path -LiteralPath $ExecutablePath)) { throw "Built executable is missing: $ExecutablePath" }
+
+    $IconResourceCheck = @"
+import pefile
+import sys
+
+pe = pefile.PE(sys.argv[1])
+icon_types = [entry for entry in pe.DIRECTORY_ENTRY_RESOURCE.entries if entry.id == 3]
+count = len(icon_types[0].directory.entries) if icon_types else 0
+print('Embedded Windows icon layers:', count)
+raise SystemExit(0 if count >= 7 else 1)
+"@
+    Invoke-Checked $VenvPython @("-c", $IconResourceCheck, $ExecutablePath) "Embedded Windows icon verification"
 
     $env:QT_QPA_PLATFORM = "offscreen"
     $SelfTest = Start-Process -FilePath $ExecutablePath -ArgumentList "--self-test" -WindowStyle Hidden -PassThru
