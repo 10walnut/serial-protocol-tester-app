@@ -17,8 +17,9 @@
 - 支持帧头、长度字段、分包和粘包；重复历史记录保留原始数据，但复用一套字段说明。
 - 支持物理 COM、pyserial URL、内部虚拟链路和 com0com 虚拟串口对。
 - 波特率从协议或命令预加载，可从常用值下拉选择，也可手动输入 50-4000000；手动值会覆盖后续命令预设并立即应用到已打开的串口。
-- 高频接收使用帧队列分批派发；实时重复帧完整保留原始记录，但字段解析面板最多每 200 ms 刷新一次，避免 100 ms 数据流持续重建表格。
-- 通讯历史保留最近 2000 条并分块清理。点选旧记录会暂停自动跟随，重新选择最后一行即可恢复跟随实时数据。
+- 高频接收使用帧队列分批派发；通讯记录使用轻量数据模型和固定列宽，不再为每一帧创建大量表格控件。
+- 实时重复帧不自动重建字段解释。保持“跟随最新”即可自动滚动到底部；需要查看字段计算时点击“刷新解析”，取消勾选后可稳定检查历史记录。
+- 通讯历史保留最近 2000 条并通过模型分块清理，避免长时间运行持续增加界面对象。
 - 关于窗口包含版本、作者、项目地址、检查更新、Skill 下载与使用教程，以及并列显示的微信/支付宝赞赏码。
 
 ### 下载与启动
@@ -119,7 +120,7 @@ Download the Windows executable from [GitHub Releases](https://github.com/10waln
 
 For two-application testing, install the official [com0com 3.0.0.0 signed package](https://sourceforge.net/projects/com0com/files/com0com/3.0.0.0/com0com-3.0.0.0-i386-and-x64-signed.zip/download), remove legacy direct `PortName=COM10` pairs, and recreate COM10/COM11 from the application's Virtual Ports dialog. Success requires both names to appear under Windows **Ports (COM & LPT)** and in pyserial enumeration. Some Secure Boot configurations can still reject this older driver with Code 52; the application never disables Windows signature enforcement.
 
-Load a JSON file, choose Host or Device, open an internal or serial transport, and run a command. The interface offers Simplified Chinese, English, Hindi, Spanish, Arabic, French, Bengali, Portuguese, Russian, and Urdu. Baud rate is preloaded from the protocol but remains editable through a common-value dropdown or direct input. High-rate receive traffic is queued and dispatched in bounded batches; repeated live-frame details refresh at most every 200 ms while raw traffic remains available in a rolling 2,000-row history. Selecting an older row pauses live auto-follow. In Device mode, an incoming matching request sends `response` first, `follow_up_replies` schedules additional frames, and `stop_streams` cancels them. Host mode records incoming requests but intentionally does not auto-reply.
+Load a JSON file, choose Host or Device, open an internal or serial transport, and run a command. The interface offers Simplified Chinese, English, Hindi, Spanish, Arabic, French, Bengali, Portuguese, Russian, and Urdu. Baud rate is preloaded from the protocol but remains editable through a common-value dropdown or direct input. High-rate receive traffic is queued and shown through a lightweight table model with a rolling 2,000-row history. Keep **Follow latest** enabled for reliable bottom scrolling, or disable it to inspect history. Repeated live-frame details are decoded only when **Refresh details** is clicked, so field calculations cannot block receive traffic. In Device mode, an incoming matching request sends `response` first, `follow_up_replies` schedules additional frames, and `stop_streams` cancels them. Host mode records incoming requests but intentionally does not auto-reply.
 
 For Doubao, download the complete Skill ZIP, open **Create Skill > Upload Skill**, and upload the ZIP containing `SKILL.md` directly. The application's About dialog includes working download and guide buttons for this flow.
 

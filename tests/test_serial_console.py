@@ -155,7 +155,7 @@ class SerialConsoleUiTests(unittest.TestCase):
         self.assertIn("TX", window.decoded_fields_label.text())
         window.close()
 
-    def test_realtime_history_is_bounded_and_detail_refresh_is_throttled(self) -> None:
+    def test_realtime_history_is_bounded_and_details_refresh_on_demand(self) -> None:
         window = SerialConsole()
         frame_spec = {
             "repeat_group": "measurement",
@@ -177,23 +177,40 @@ class SerialConsoleUiTests(unittest.TestCase):
 
         self.assertLessEqual(window.log_table.rowCount(), MAX_TRAFFIC_ROWS)
         self.assertEqual(len(window.log_entries), window.log_table.rowCount())
-        self.assertLessEqual(render.call_count, 1)
+        self.assertEqual(render.call_count, 0)
+        self.assertEqual(window.decoded_table.rowCount(), 0)
+        self.assertIn("刷新解析", window.decoded_fields_label.text())
+
+        QTest.mouseClick(window.refresh_details_button, Qt.MouseButton.LeftButton)
+        self.app.processEvents()
+        self.assertEqual(window.decoded_table.item(0, 4).text(), f"{(MAX_TRAFFIC_ROWS + 524) & 0xFF:02X}")
         window.close()
 
-    def test_selecting_old_realtime_row_pauses_auto_follow(self) -> None:
+    def test_follow_latest_is_explicit_and_returns_to_the_newest_row(self) -> None:
         window = SerialConsole()
+        window.show()
         frame_spec = {"repeat_group": "measurement", "decode": []}
         command = {"name": "实时数据"}
-        for value in range(1, 4):
+        for value in range(1, 80):
             window._append_log("RX", bytes([value]), command, frame_spec)
-        QTest.qWait(220)
+        self.app.processEvents()
+        self.assertEqual(window.log_table.currentRow(), window.log_table.rowCount() - 1)
+        self.assertEqual(window.log_table.verticalScrollBar().value(), window.log_table.verticalScrollBar().maximum())
+
+        window.follow_latest_checkbox.setChecked(False)
         window.log_table.selectRow(0)
         self.app.processEvents()
         self.assertFalse(window.auto_follow_log)
 
-        for value in range(4, 10):
+        for value in range(80, 90):
             window._append_log("RX", bytes([value]), command, frame_spec)
         self.assertEqual(window.log_table.currentRow(), 0)
+
+        window.follow_latest_checkbox.setChecked(True)
+        self.app.processEvents()
+        self.assertTrue(window.auto_follow_log)
+        self.assertEqual(window.log_table.currentRow(), window.log_table.rowCount() - 1)
+        self.assertEqual(window.log_table.verticalScrollBar().value(), window.log_table.verticalScrollBar().maximum())
         window.close()
 
     def test_received_frame_queue_has_a_per_poll_budget(self) -> None:

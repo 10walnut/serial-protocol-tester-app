@@ -13,12 +13,14 @@ from typing import Any
 
 import serial
 from serial.tools import list_ports
-from PySide6.QtCore import QSignalBlocker, QTimer, Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QFont, QIcon, QIntValidator, QPixmap
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSignalBlocker, QTimer, Qt, QUrl
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QIntValidator, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QApplication,
+    QAbstractItemView,
     QAbstractSpinBox,
+    QCheckBox,
     QComboBox,
     QDialog,
     QDialogButtonBox,
@@ -40,6 +42,7 @@ from PySide6.QtWidgets import (
     QStatusBar,
     QStyle,
     QTabWidget,
+    QTableView,
     QTableWidget,
     QTableWidgetItem,
     QToolButton,
@@ -85,7 +88,7 @@ ROOT = resource_root()
 SAMPLE_PROTOCOL = ROOT / "sample_protocol.json"
 ASSETS_DIR = ROOT / "assets"
 LOGO_PATH = ASSETS_DIR / "serial-protocol-tester-logo.png"
-APP_VERSION = "1.3.1"
+APP_VERSION = "1.3.2"
 AUTHOR = "十个核桃 / 10walnut"
 PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-app"
 SKILL_PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-skill"
@@ -113,7 +116,7 @@ COMMON_BAUDRATES = (
 MAX_RX_FRAMES_PER_POLL = 32
 MAX_TRAFFIC_ROWS = 2000
 TRAFFIC_TRIM_ROWS = 500
-LIVE_DETAIL_REFRESH_MS = 200
+TRAFFIC_STATUS_REFRESH_MS = 250
 
 
 def version_key(value: str) -> tuple[int, int, int]:
@@ -208,6 +211,9 @@ UI_TEXT = {
         "log_headers": ["时间", "方向", "命令", "原始 HEX", "文本"],
         "decoded_fields": "发送/接收数据解释",
         "decoded_fields_selected": "发送/接收数据解释 · {time} {direction} · {command}",
+        "decoded_fields_pending": "待解析 · {time} {direction} · {command} · 点击“刷新解析”查看字段解释",
+        "follow_latest": "跟随最新",
+        "refresh_details": "刷新解析",
         "clear": "清空",
         "decoded_headers": ["方向", "字节位置", "字段", "功能/作用", "原始字节", "类型/规则", "计算过程", "结果"],
         "ready": "就绪",
@@ -346,6 +352,9 @@ UI_TEXT = {
         "log_headers": ["Time", "Direction", "Command", "Raw HEX", "Text"],
         "decoded_fields": "Transmitted/received data details",
         "decoded_fields_selected": "Transmitted/received data details · {time} {direction} · {command}",
+        "decoded_fields_pending": "Pending · {time} {direction} · {command} · click Refresh details to decode",
+        "follow_latest": "Follow latest",
+        "refresh_details": "Refresh details",
         "clear": "Clear",
         "decoded_headers": ["Direction", "Bytes", "Field", "Purpose", "Raw bytes", "Type/rule", "Calculation", "Result"],
         "ready": "Ready",
@@ -453,6 +462,70 @@ UI_TEXT.update(EXTRA_UI_TEXT)
 def ui_text(language: str, key: str, **values: Any) -> Any:
     text = UI_TEXT.get(language, UI_TEXT["en"]).get(key, UI_TEXT["en"][key])
     return text.format(**values) if isinstance(text, str) and values else text
+
+
+class TrafficLogModel(QAbstractTableModel):
+    def __init__(self, entries: list[dict[str, Any]], headers: list[str]) -> None:
+        super().__init__()
+        self.entries = entries
+        self.headers = headers
+
+    def rowCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else len(self.entries)
+
+    def columnCount(self, parent: QModelIndex = QModelIndex()) -> int:
+        return 0 if parent.isValid() else 5
+
+    def data(self, index: QModelIndex, role: int = Qt.ItemDataRole.DisplayRole) -> Any:
+        if not index.isValid() or not 0 <= index.row() < len(self.entries):
+            return None
+        values = self.entries[index.row()]["display_values"]
+        if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
+            return values[index.column()]
+        if role == Qt.ItemDataRole.ForegroundRole and index.column() == 1:
+            return QColor(Qt.GlobalColor.darkGreen if values[1] == "RX" else Qt.GlobalColor.darkBlue)
+        return None
+
+    def headerData(
+        self,
+        section: int,
+        orientation: Qt.Orientation,
+        role: int = Qt.ItemDataRole.DisplayRole,
+    ) -> Any:
+        if role == Qt.ItemDataRole.DisplayRole and orientation == Qt.Orientation.Horizontal:
+            return self.headers[section] if 0 <= section < len(self.headers) else ""
+        return super().headerData(section, orientation, role)
+
+    def set_headers(self, headers: list[str]) -> None:
+        self.headers = headers
+        self.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, self.columnCount() - 1)
+
+    def append_entry(self, entry: dict[str, Any]) -> None:
+        if len(self.entries) >= MAX_TRAFFIC_ROWS:
+            remove_count = min(TRAFFIC_TRIM_ROWS, len(self.entries))
+            self.beginRemoveRows(QModelIndex(), 0, remove_count - 1)
+            del self.entries[:remove_count]
+            self.endRemoveRows()
+        row = len(self.entries)
+        self.beginInsertRows(QModelIndex(), row, row)
+        self.entries.append(entry)
+        self.endInsertRows()
+
+    def clear(self) -> None:
+        if not self.entries:
+            return
+        self.beginResetModel()
+        self.entries.clear()
+        self.endResetModel()
+
+
+class TrafficTableView(QTableView):
+    def rowCount(self) -> int:
+        model = self.model()
+        return model.rowCount() if model is not None else 0
+
+    def currentRow(self) -> int:
+        return self.currentIndex().row()
 
 
 class AboutDialog(QDialog):
@@ -1033,8 +1106,9 @@ class SerialConsole(QMainWindow):
         self.rx_buffer = bytearray()
         self.pending_rx_frames: deque[bytes] = deque()
         self.last_rx_at = 0.0
-        self.last_detail_render_at = 0.0
+        self.last_traffic_status_at = 0.0
         self.auto_follow_log = True
+        self.details_pending = False
         self.language = "zh"
         self.baudrate_user_edited = False
         self.last_valid_baudrate = 9600
@@ -1045,9 +1119,9 @@ class SerialConsole(QMainWindow):
         self._build_ui()
         self._apply_style()
 
-        self.detail_refresh_timer = QTimer(self)
-        self.detail_refresh_timer.setSingleShot(True)
-        self.detail_refresh_timer.timeout.connect(self._select_latest_log_and_render)
+        self.follow_scroll_timer = QTimer(self)
+        self.follow_scroll_timer.setSingleShot(True)
+        self.follow_scroll_timer.timeout.connect(self._ensure_latest_visible)
 
         self.poll_timer = QTimer(self)
         self.poll_timer.setInterval(20)
@@ -1200,29 +1274,43 @@ class SerialConsole(QMainWindow):
 
         self.output_group = QGroupBox()
         output_layout = QVBoxLayout(self.output_group)
-        self.log_table = QTableWidget(0, 5)
-        self.log_table.setHorizontalHeaderLabels(["", "", "", "", ""])
-        self.log_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.log_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.log_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
+        self.log_table = TrafficTableView()
+        self.log_model = TrafficLogModel(self.log_entries, ["", "", "", "", ""])
+        self.log_table.setModel(self.log_model)
+        self.log_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.log_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.log_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.log_table.setAlternatingRowColors(True)
         self.log_table.setWordWrap(False)
         self.log_table.verticalHeader().setVisible(False)
         self.log_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
         self.log_table.verticalHeader().setDefaultSectionSize(24)
-        self.log_table.itemSelectionChanged.connect(self._show_selected_log_details)
+        self.log_table.selectionModel().selectionChanged.connect(self._show_selected_log_details)
+        self.log_table.verticalScrollBar().rangeChanged.connect(self._follow_log_scroll_range)
         log_header = self.log_table.horizontalHeader()
-        log_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        log_header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        log_header.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        log_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
+        log_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
+        log_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
         log_header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         log_header.setSectionResizeMode(4, QHeaderView.ResizeMode.Stretch)
+        self.log_table.setColumnWidth(0, 108)
+        self.log_table.setColumnWidth(1, 64)
+        self.log_table.setColumnWidth(2, 190)
         output_layout.addWidget(self.log_table, 3)
 
         decoded_header = QHBoxLayout()
         self.decoded_fields_label = QLabel()
+        self.decoded_fields_label.setWordWrap(True)
+        self.decoded_fields_label.setMinimumWidth(180)
         decoded_header.addWidget(self.decoded_fields_label)
         decoded_header.addStretch(1)
+        self.follow_latest_checkbox = QCheckBox()
+        self.follow_latest_checkbox.setChecked(True)
+        self.follow_latest_checkbox.toggled.connect(self._toggle_auto_follow)
+        decoded_header.addWidget(self.follow_latest_checkbox)
+        self.refresh_details_button = QPushButton()
+        self.refresh_details_button.clicked.connect(self._refresh_selected_details)
+        decoded_header.addWidget(self.refresh_details_button)
         self.clear_button = QPushButton()
         self.clear_button.clicked.connect(self._clear_output)
         decoded_header.addWidget(self.clear_button)
@@ -1285,8 +1373,10 @@ class SerialConsole(QMainWindow):
         self.command_table.setHorizontalHeaderLabels(self._t("command_headers"))
         self.command_detail.setPlaceholderText(self._t("select_command"))
         self.output_group.setTitle(self._t("traffic"))
-        self.log_table.setHorizontalHeaderLabels(self._t("log_headers"))
+        self.log_model.set_headers(self._t("log_headers"))
         self.decoded_fields_label.setText(self._t("decoded_fields"))
+        self.follow_latest_checkbox.setText(self._t("follow_latest"))
+        self.refresh_details_button.setText(self._t("refresh_details"))
         self.clear_button.setText(self._t("clear"))
         self.decoded_table.setHorizontalHeaderLabels(self._t("decoded_headers"))
         if self.connected:
@@ -1545,7 +1635,7 @@ class SerialConsole(QMainWindow):
         self.connected = False
         self.rx_buffer.clear()
         self.pending_rx_frames.clear()
-        self.detail_refresh_timer.stop()
+        self.follow_scroll_timer.stop()
         self.connect_button.setText(self._t("open"))
         self.connection_label.setText(self._t("closed"))
         self.connection_label.setStyleSheet("")
@@ -1829,8 +1919,6 @@ class SerialConsole(QMainWindow):
         command: dict[str, Any] | None,
         frame_spec: dict[str, Any] | None,
     ) -> None:
-        self._trim_log_history()
-        row = self.log_table.rowCount()
         now = time.strftime("%H:%M:%S") + f".{int(time.time() * 1000) % 1000:03d}"
         try:
             text_preview = data.decode("utf-8").replace("\r", "\\r").replace("\n", "\\n")
@@ -1839,84 +1927,97 @@ class SerialConsole(QMainWindow):
         except UnicodeDecodeError:
             text_preview = ""
         command_name = localized_value(command, "name", self.language, self._t("unmatched")) if command else self._t("unmatched")
-        self.log_entries.append(
-            {
-                "time": now,
-                "direction": direction,
-                "data": bytes(data),
-                "command": command,
-                "frame_spec": frame_spec,
-            }
-        )
-        self.log_table.setUpdatesEnabled(False)
-        try:
-            self.log_table.insertRow(row)
-            values = [now, direction, command_name, format_hex(data), text_preview]
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
-                item.setToolTip(value)
-                if column == 1:
-                    item.setForeground(Qt.GlobalColor.darkGreen if direction == "RX" else Qt.GlobalColor.darkBlue)
-                self.log_table.setItem(row, column, item)
-        finally:
-            self.log_table.setUpdatesEnabled(True)
+        entry = {
+            "time": now,
+            "direction": direction,
+            "data": bytes(data),
+            "command": command,
+            "frame_spec": frame_spec,
+            "display_values": [now, direction, command_name, format_hex(data), text_preview],
+        }
+        selection_blocker = QSignalBlocker(self.log_table.selectionModel())
+        self.log_model.append_entry(entry)
+        if self.auto_follow_log:
+            self.log_table.selectRow(self.log_table.rowCount() - 1)
+        del selection_blocker
 
         if self.auto_follow_log:
+            self.log_table.scrollToBottom()
+            self._schedule_follow_scroll()
             if frame_spec and frame_spec.get("repeat_group"):
-                self._schedule_live_detail_refresh()
+                self._mark_details_pending()
             else:
-                self.detail_refresh_timer.stop()
-                self._select_latest_log_and_render()
-        self.statusBar().showMessage(
-            self._t("traffic_status", direction=direction, count=len(data), command=command_name)
-        )
+                self._render_frame_details()
 
-    def _trim_log_history(self) -> None:
-        row_count = self.log_table.rowCount()
-        if row_count < MAX_TRAFFIC_ROWS:
-            return
-        remove_count = min(TRAFFIC_TRIM_ROWS, row_count)
-        selected_row = self.log_table.currentRow()
-        blocker = QSignalBlocker(self.log_table)
-        self.log_table.setUpdatesEnabled(False)
-        try:
-            for _index in range(remove_count):
-                self.log_table.removeRow(0)
-            del self.log_entries[:remove_count]
-            if not self.auto_follow_log and self.log_table.rowCount():
-                self.log_table.selectRow(max(0, selected_row - remove_count))
-        finally:
-            self.log_table.setUpdatesEnabled(True)
-            del blocker
-        if not self.auto_follow_log:
-            self._render_frame_details()
+        now_monotonic = time.monotonic()
+        if (now_monotonic - self.last_traffic_status_at) * 1000 >= TRAFFIC_STATUS_REFRESH_MS:
+            self.last_traffic_status_at = now_monotonic
+            self.statusBar().showMessage(
+                self._t("traffic_status", direction=direction, count=len(data), command=command_name)
+            )
 
-    def _schedule_live_detail_refresh(self) -> None:
-        elapsed_ms = (time.monotonic() - self.last_detail_render_at) * 1000
-        if elapsed_ms >= LIVE_DETAIL_REFRESH_MS and not self.detail_refresh_timer.isActive():
-            self._select_latest_log_and_render()
+    def _select_latest_log(self) -> None:
+        if not self.log_table.rowCount():
             return
-        if not self.detail_refresh_timer.isActive():
-            self.detail_refresh_timer.start(max(1, int(LIVE_DETAIL_REFRESH_MS - elapsed_ms)))
-
-    def _select_latest_log_and_render(self) -> None:
-        if not self.auto_follow_log or not self.log_table.rowCount():
-            return
-        blocker = QSignalBlocker(self.log_table)
+        blocker = QSignalBlocker(self.log_table.selectionModel())
         self.log_table.selectRow(self.log_table.rowCount() - 1)
         del blocker
         self.log_table.scrollToBottom()
+        self._schedule_follow_scroll()
+
+    def _schedule_follow_scroll(self) -> None:
+        if self.auto_follow_log and not self.follow_scroll_timer.isActive():
+            self.follow_scroll_timer.start(0)
+
+    def _ensure_latest_visible(self) -> None:
+        if not self.auto_follow_log or not self.log_table.rowCount():
+            return
+        blocker = QSignalBlocker(self.log_table.selectionModel())
+        self.log_table.selectRow(self.log_table.rowCount() - 1)
+        del blocker
+        self.log_table.scrollToBottom()
+
+    def _follow_log_scroll_range(self, _minimum: int, maximum: int) -> None:
+        if self.auto_follow_log:
+            self.log_table.verticalScrollBar().setValue(maximum)
+
+    def _toggle_auto_follow(self, checked: bool) -> None:
+        self.auto_follow_log = checked
+        if checked:
+            self._select_latest_log()
+            self._mark_details_pending()
+
+    def _refresh_selected_details(self) -> None:
+        if self.log_table.currentRow() < 0:
+            self._select_latest_log()
         self._render_frame_details()
 
     def _show_selected_log_details(self) -> None:
-        self.detail_refresh_timer.stop()
-        self.auto_follow_log = self.log_table.currentRow() == self.log_table.rowCount() - 1
         self._render_frame_details()
+
+    def _mark_details_pending(self) -> None:
+        row = self.log_table.currentRow()
+        entry = self.log_entries[row] if 0 <= row < len(self.log_entries) else None
+        if entry is None:
+            return
+        command = entry["command"]
+        command_name = localized_value(command, "name", self.language, self._t("unmatched")) if command else self._t("unmatched")
+        self.decoded_fields_label.setText(
+            self._t(
+                "decoded_fields_pending",
+                time=entry["time"],
+                direction=entry["direction"],
+                command=command_name,
+            )
+        )
+        if not self.details_pending:
+            self.decoded_table.setRowCount(0)
+        self.details_pending = True
 
     def _render_frame_details(self) -> None:
         if not hasattr(self, "decoded_table"):
             return
-        self.last_detail_render_at = time.monotonic()
+        self.details_pending = False
         framing = self.protocol.get("framing") if self.protocol else None
         details: list[dict[str, str]] = []
         row = self.log_table.currentRow() if hasattr(self, "log_table") else -1
@@ -1939,32 +2040,40 @@ class SerialConsole(QMainWindow):
             )
         else:
             self.decoded_fields_label.setText(self._t("decoded_fields"))
-        self.decoded_table.setRowCount(len(details))
-        for row, field in enumerate(details):
-            values = [
-                field["direction"],
-                field["byte_range"],
-                field["field"],
-                field["purpose"],
-                field["raw"],
-                field["rule"],
-                field["calculation"],
-                field["result"],
-            ]
-            for column, value in enumerate(values):
-                item = QTableWidgetItem(str(value))
-                item.setToolTip(str(value))
-                if column == 0:
-                    item.setForeground(Qt.GlobalColor.darkGreen if value == "RX" else Qt.GlobalColor.darkBlue)
-                self.decoded_table.setItem(row, column, item)
+        self.decoded_table.setUpdatesEnabled(False)
+        try:
+            self.decoded_table.setRowCount(len(details))
+            for row, field in enumerate(details):
+                values = [
+                    field["direction"],
+                    field["byte_range"],
+                    field["field"],
+                    field["purpose"],
+                    field["raw"],
+                    field["rule"],
+                    field["calculation"],
+                    field["result"],
+                ]
+                for column, value in enumerate(values):
+                    item = QTableWidgetItem(str(value))
+                    item.setToolTip(str(value))
+                    if column == 0:
+                        item.setForeground(Qt.GlobalColor.darkGreen if value == "RX" else Qt.GlobalColor.darkBlue)
+                    self.decoded_table.setItem(row, column, item)
+        finally:
+            self.decoded_table.setUpdatesEnabled(True)
 
     def _clear_output(self) -> None:
-        self.detail_refresh_timer.stop()
-        self.log_table.setRowCount(0)
-        self.log_entries.clear()
+        self.follow_scroll_timer.stop()
+        self.log_model.clear()
         self.decoded_table.setRowCount(0)
+        blocker = QSignalBlocker(self.follow_latest_checkbox)
+        self.follow_latest_checkbox.setChecked(True)
+        del blocker
         self.auto_follow_log = True
-        self.last_detail_render_at = 0.0
+        self.details_pending = False
+        self.last_traffic_status_at = 0.0
+        self.decoded_fields_label.setText(self._t("decoded_fields"))
         self.statusBar().showMessage(self._t("output_cleared"))
 
     def _report_runtime_error(self, error: Exception) -> None:
