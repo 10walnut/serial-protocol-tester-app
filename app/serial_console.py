@@ -88,7 +88,7 @@ ROOT = resource_root()
 SAMPLE_PROTOCOL = ROOT / "sample_protocol.json"
 ASSETS_DIR = ROOT / "assets"
 LOGO_PATH = ASSETS_DIR / "serial-protocol-tester-logo.png"
-APP_VERSION = "1.3.2"
+APP_VERSION = "1.3.3"
 AUTHOR = "十个核桃 / 10walnut"
 PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-app"
 SKILL_PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-skill"
@@ -163,12 +163,54 @@ def relaunch_as_admin() -> bool:
 
 
 def open_external_url(url: str) -> bool:
+    target = QUrl(url)
+    if not target.isValid() or target.scheme().lower() not in {"http", "https"}:
+        return False
+    if os.name == "nt":
+        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        try:
+            subprocess.Popen(
+                ["explorer.exe", url],
+                close_fds=True,
+                creationflags=creation_flags,
+            )
+            return True
+        except (OSError, subprocess.SubprocessError):
+            pass
+        try:
+            os.startfile(url, "open")
+            return True
+        except (OSError, TypeError):
+            pass
+        try:
+            shell_execute = ctypes.WinDLL("shell32", use_last_error=True).ShellExecuteW
+            shell_execute.argtypes = [
+                ctypes.c_void_p,
+                ctypes.c_wchar_p,
+                ctypes.c_wchar_p,
+                ctypes.c_wchar_p,
+                ctypes.c_wchar_p,
+                ctypes.c_int,
+            ]
+            shell_execute.restype = ctypes.c_void_p
+            result = shell_execute(None, "open", url, None, None, 1)
+            if result and int(result) > 32:
+                return True
+        except (AttributeError, OSError, TypeError, ValueError):
+            pass
+    if QDesktopServices.openUrl(target):
+        return True
     if os.name == "nt":
         try:
-            return int(ctypes.windll.shell32.ShellExecuteW(None, "open", url, None, None, 1)) > 32
-        except (OSError, TypeError, ValueError):
-            return False
-    return QDesktopServices.openUrl(QUrl(url))
+            subprocess.Popen(
+                ["rundll32.exe", "url.dll,FileProtocolHandler", url],
+                close_fds=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            return True
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return False
 
 
 UI_TEXT = {
@@ -595,8 +637,10 @@ class AboutDialog(QDialog):
             f'<a href="{PROJECT_URL}">{self._t("about_project")}</a>'
             f' &nbsp;·&nbsp; <a href="{SKILL_PROJECT_URL}">{self._t("about_skill")}</a>'
         )
+        links.setObjectName("projectLinks")
         links.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        links.setOpenExternalLinks(True)
+        links.setOpenExternalLinks(False)
+        links.linkActivated.connect(self._open_url)
         links.setWordWrap(True)
         layout.addWidget(links)
         layout.addStretch(1)

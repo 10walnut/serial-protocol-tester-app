@@ -21,6 +21,7 @@
 - 实时重复帧不自动重建字段解释。保持“跟随最新”即可自动滚动到底部；需要查看字段计算时点击“刷新解析”，取消勾选后可稳定检查历史记录。
 - 通讯历史保留最近 2000 条并通过模型分块清理，避免长时间运行持续增加界面对象。
 - 关于窗口包含版本、作者、项目地址、检查更新、Skill 下载与使用教程，以及并列显示的微信/支付宝赞赏码。
+- 管理员模式下的网页链接统一通过 Windows Explorer 代理打开，并提供 `startfile`、ShellExecute、Qt 和 rundll32 多级回退。
 
 ### 下载与启动
 
@@ -122,6 +123,6 @@ For two-application testing, install the official [com0com 3.0.0.0 signed packag
 
 Load a JSON file, choose Host or Device, open an internal or serial transport, and run a command. The interface offers Simplified Chinese, English, Hindi, Spanish, Arabic, French, Bengali, Portuguese, Russian, and Urdu. Baud rate is preloaded from the protocol but remains editable through a common-value dropdown or direct input. High-rate receive traffic is queued and shown through a lightweight table model with a rolling 2,000-row history. Keep **Follow latest** enabled for reliable bottom scrolling, or disable it to inspect history. Repeated live-frame details are decoded only when **Refresh details** is clicked, so field calculations cannot block receive traffic. In Device mode, an incoming matching request sends `response` first, `follow_up_replies` schedules additional frames, and `stop_streams` cancels them. Host mode records incoming requests but intentionally does not auto-reply.
 
-For Doubao, download the complete Skill ZIP, open **Create Skill > Upload Skill**, and upload the ZIP containing `SKILL.md` directly. The application's About dialog includes working download and guide buttons for this flow.
+For Doubao, download the complete Skill ZIP, open **Create Skill > Upload Skill**, and upload the ZIP containing `SKILL.md` directly. The application's About dialog routes project, download, guide, update, and driver links through an elevated-process-safe Windows browser launcher with multiple fallbacks.
 
 The companion [Serial Protocol Tester Skill](https://github.com/10walnut/serial-protocol-tester-skill) converts protocol documents for Codex, Claude Code, WorkBuddy, Harness, Doubao, and other agents. Thanks to the [com0com project](https://sourceforge.net/projects/com0com/) and its contributors; the driver is GPL software and is linked rather than redistributed here. Application code is MIT licensed.

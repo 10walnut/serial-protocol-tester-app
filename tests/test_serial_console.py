@@ -34,12 +34,14 @@ from serial_console import (
     MAX_RX_FRAMES_PER_POLL,
     MAX_TRAFFIC_ROWS,
     LOGO_PATH,
+    PROJECT_URL,
     SKILL_DOWNLOAD_URL,
     SKILL_PROJECT_URL,
     SerialConsole,
     UI_TEXT,
     VariableInputDialog,
     VirtualPortDialog,
+    open_external_url,
     version_key,
 )
 
@@ -96,6 +98,40 @@ class SerialConsoleUiTests(unittest.TestCase):
         self.assertEqual(opener.call_args_list[0].args, (SKILL_DOWNLOAD_URL,))
         self.assertEqual(opener.call_args_list[1].args, (SKILL_PROJECT_URL,))
         dialog.close()
+
+    def test_about_project_links_use_the_same_fallback_launcher(self) -> None:
+        dialog = AboutDialog("zh")
+        links = dialog.findChild(QLabel, "projectLinks")
+        self.assertIsNotNone(links)
+
+        with patch("serial_console.open_external_url", return_value=True) as opener:
+            links.linkActivated.emit(PROJECT_URL)
+            links.linkActivated.emit(SKILL_PROJECT_URL)
+        self.assertEqual(opener.call_args_list[0].args, (PROJECT_URL,))
+        self.assertEqual(opener.call_args_list[1].args, (SKILL_PROJECT_URL,))
+        dialog.close()
+
+    def test_windows_url_launcher_uses_explorer_broker_first(self) -> None:
+        if os.name != "nt":
+            self.skipTest("Windows-specific browser broker")
+        with patch("serial_console.subprocess.Popen") as launcher:
+            self.assertTrue(open_external_url(PROJECT_URL))
+        self.assertEqual(launcher.call_args.args[0], ["explorer.exe", PROJECT_URL])
+
+    def test_windows_url_launcher_falls_back_to_startfile(self) -> None:
+        if os.name != "nt":
+            self.skipTest("Windows-specific browser fallback")
+        with (
+            patch("serial_console.subprocess.Popen", side_effect=OSError),
+            patch("serial_console.os.startfile") as startfile,
+        ):
+            self.assertTrue(open_external_url(SKILL_DOWNLOAD_URL))
+        startfile.assert_called_once_with(SKILL_DOWNLOAD_URL, "open")
+
+    def test_url_launcher_rejects_non_web_schemes(self) -> None:
+        with patch("serial_console.subprocess.Popen") as launcher:
+            self.assertFalse(open_external_url("file:///C:/Windows/System32/cmd.exe"))
+        launcher.assert_not_called()
 
     def test_language_selector_exposes_ten_languages_and_retranslates(self) -> None:
         window = SerialConsole()
