@@ -31,6 +31,8 @@ from serial_console import (
     AboutDialog,
     COMMON_BAUDRATES,
     LANGUAGE_OPTIONS,
+    MAX_RX_FRAMES_PER_POLL,
+    MAX_TRAFFIC_ROWS,
     LOGO_PATH,
     SKILL_DOWNLOAD_URL,
     SKILL_PROJECT_URL,
@@ -39,6 +41,11 @@ from serial_console import (
     VariableInputDialog,
     VirtualPortDialog,
     version_key,
+)
+
+AT32_REALTIME_FRAME = bytes.fromhex(
+    "AA 55 10 25 EA 07 09 02 0C 02 1A 93 02 7C FF FF FF 9B FF FF FF "
+    "5B 00 00 00 D2 FF FF FF 45 FF 9C 00 1B 10 43 00 12 00 06 00 8F"
 )
 
 
@@ -148,6 +155,56 @@ class SerialConsoleUiTests(unittest.TestCase):
         self.assertIn("TX", window.decoded_fields_label.text())
         window.close()
 
+    def test_realtime_history_is_bounded_and_detail_refresh_is_throttled(self) -> None:
+        window = SerialConsole()
+        frame_spec = {
+            "repeat_group": "measurement",
+            "decode": [
+                {
+                    "name": "value",
+                    "label": "值",
+                    "purpose": "实时值",
+                    "offset": 0,
+                    "length": 1,
+                    "type": "uint8",
+                }
+            ],
+        }
+        command = {"name": "实时数据"}
+        with patch.object(window, "_render_frame_details", wraps=window._render_frame_details) as render:
+            for value in range(MAX_TRAFFIC_ROWS + 525):
+                window._append_log("RX", bytes([value & 0xFF]), command, frame_spec)
+
+        self.assertLessEqual(window.log_table.rowCount(), MAX_TRAFFIC_ROWS)
+        self.assertEqual(len(window.log_entries), window.log_table.rowCount())
+        self.assertLessEqual(render.call_count, 1)
+        window.close()
+
+    def test_selecting_old_realtime_row_pauses_auto_follow(self) -> None:
+        window = SerialConsole()
+        frame_spec = {"repeat_group": "measurement", "decode": []}
+        command = {"name": "实时数据"}
+        for value in range(1, 4):
+            window._append_log("RX", bytes([value]), command, frame_spec)
+        QTest.qWait(220)
+        window.log_table.selectRow(0)
+        self.app.processEvents()
+        self.assertFalse(window.auto_follow_log)
+
+        for value in range(4, 10):
+            window._append_log("RX", bytes([value]), command, frame_spec)
+        self.assertEqual(window.log_table.currentRow(), 0)
+        window.close()
+
+    def test_received_frame_queue_has_a_per_poll_budget(self) -> None:
+        window = SerialConsole()
+        window.pending_rx_frames.extend([b"\x01"] * (MAX_RX_FRAMES_PER_POLL + 5))
+        with patch.object(window, "_handle_received_frame") as handler:
+            window._drain_received_frames()
+        self.assertEqual(handler.call_count, MAX_RX_FRAMES_PER_POLL)
+        self.assertEqual(len(window.pending_rx_frames), 5)
+        window.close()
+
     def test_internal_device_sends_ack_then_periodic_frames_until_stop(self) -> None:
         window = SerialConsole()
         window._open_connection()
@@ -233,6 +290,50 @@ class SerialConsoleUiTests(unittest.TestCase):
         self.assertTrue(
             any(entry["direction"] == "TX" and entry["data"] == expected_response for entry in window.log_entries)
         )
+        window.close()
+
+    def test_serial_url_drains_burst_of_realtime_frames_without_loss(self) -> None:
+        window = SerialConsole()
+        window.protocol = {
+            "name": "AT32 实时测试",
+            "serial": {
+                "defaults": {"baudrate": 115200, "bytesize": 8, "parity": "N", "stopbits": 1, "timeout_ms": 200}
+            },
+            "framing": {
+                "header": "AA 55",
+                "length_offset": 3,
+                "length_size": 1,
+                "payload_offset": 4,
+                "checksum_length": 1,
+                "max_frame_length": 260,
+            },
+            "frames": [
+                {
+                    "id": "realtime",
+                    "name": "实时数据",
+                    "repeat_group": "measurement",
+                    "match": {"offset": 2, "data": "10"},
+                    "decode": [],
+                }
+            ],
+            "commands": [],
+        }
+        window.role_combo.setCurrentIndex(window.role_combo.findData("host"))
+        window.transport_combo.setCurrentIndex(window.transport_combo.findData("serial"))
+        window.port_combo.setEditText("loop://")
+        window._set_baudrate_value(115200)
+        window._open_connection()
+        self.assertTrue(window.connected)
+
+        frame_count = MAX_RX_FRAMES_PER_POLL * 2
+        window.serial_port.write(AT32_REALTIME_FRAME * frame_count)
+        window.serial_port.flush()
+        QTest.qWait(500)
+
+        received = [entry for entry in window.log_entries if entry["direction"] == "RX"]
+        self.assertEqual(len(received), frame_count)
+        self.assertTrue(all(entry["data"] == AT32_REALTIME_FRAME for entry in received))
+        self.assertFalse(window.pending_rx_frames)
         window.close()
 
     def test_host_mode_explains_why_received_request_is_not_replied_to(self) -> None:

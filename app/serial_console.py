@@ -7,12 +7,13 @@ import re
 import subprocess
 import sys
 import time
+from collections import deque
 from pathlib import Path
 from typing import Any
 
 import serial
 from serial.tools import list_ports
-from PySide6.QtCore import QTimer, Qt, QUrl
+from PySide6.QtCore import QSignalBlocker, QTimer, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QFont, QIcon, QIntValidator, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
@@ -84,7 +85,7 @@ ROOT = resource_root()
 SAMPLE_PROTOCOL = ROOT / "sample_protocol.json"
 ASSETS_DIR = ROOT / "assets"
 LOGO_PATH = ASSETS_DIR / "serial-protocol-tester-logo.png"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.3.1"
 AUTHOR = "十个核桃 / 10walnut"
 PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-app"
 SKILL_PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-skill"
@@ -109,6 +110,10 @@ COMMON_BAUDRATES = (
     921600,
     1000000,
 )
+MAX_RX_FRAMES_PER_POLL = 32
+MAX_TRAFFIC_ROWS = 2000
+TRAFFIC_TRIM_ROWS = 500
+LIVE_DETAIL_REFRESH_MS = 200
 
 
 def version_key(value: str) -> tuple[int, int, int]:
@@ -1026,7 +1031,10 @@ class SerialConsole(QMainWindow):
         self.variable_values: dict[str, dict[str, Any]] = {}
         self.reply_timers: dict[str, list[QTimer]] = {}
         self.rx_buffer = bytearray()
+        self.pending_rx_frames: deque[bytes] = deque()
         self.last_rx_at = 0.0
+        self.last_detail_render_at = 0.0
+        self.auto_follow_log = True
         self.language = "zh"
         self.baudrate_user_edited = False
         self.last_valid_baudrate = 9600
@@ -1036,6 +1044,10 @@ class SerialConsole(QMainWindow):
         self.setWindowIcon(QIcon(str(LOGO_PATH)))
         self._build_ui()
         self._apply_style()
+
+        self.detail_refresh_timer = QTimer(self)
+        self.detail_refresh_timer.setSingleShot(True)
+        self.detail_refresh_timer.timeout.connect(self._select_latest_log_and_render)
 
         self.poll_timer = QTimer(self)
         self.poll_timer.setInterval(20)
@@ -1194,7 +1206,10 @@ class SerialConsole(QMainWindow):
         self.log_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.log_table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
         self.log_table.setAlternatingRowColors(True)
+        self.log_table.setWordWrap(False)
         self.log_table.verticalHeader().setVisible(False)
+        self.log_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Fixed)
+        self.log_table.verticalHeader().setDefaultSectionSize(24)
         self.log_table.itemSelectionChanged.connect(self._show_selected_log_details)
         log_header = self.log_table.horizontalHeader()
         log_header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
@@ -1505,6 +1520,8 @@ class SerialConsole(QMainWindow):
                     write_timeout=1,
                 )
             self.connected = True
+            self.rx_buffer.clear()
+            self.pending_rx_frames.clear()
             self.connect_button.setText(self._t("close"))
             self.connection_label.setText(self._t("opened"))
             self.connection_label.setStyleSheet("color: #176b70; font-weight: 700;")
@@ -1527,6 +1544,8 @@ class SerialConsole(QMainWindow):
         self.serial_port = None
         self.connected = False
         self.rx_buffer.clear()
+        self.pending_rx_frames.clear()
+        self.detail_refresh_timer.stop()
         self.connect_button.setText(self._t("open"))
         self.connection_label.setText(self._t("closed"))
         self.connection_label.setStyleSheet("")
@@ -1632,8 +1651,7 @@ class SerialConsole(QMainWindow):
                 if isinstance(framing, dict):
                     frames, remainder = split_framed_bytes(bytes(self.rx_buffer), framing)
                     self.rx_buffer = bytearray(remainder)
-                    for frame in frames:
-                        self._handle_received_frame(frame)
+                    self.pending_rx_frames.extend(frames)
             elif (
                 self.rx_buffer
                 and not (self.protocol and isinstance(self.protocol.get("framing"), dict))
@@ -1641,10 +1659,15 @@ class SerialConsole(QMainWindow):
             ):
                 frame = bytes(self.rx_buffer)
                 self.rx_buffer.clear()
-                self._handle_received_frame(frame)
+                self.pending_rx_frames.append(frame)
+            self._drain_received_frames()
         except (serial.SerialException, OSError) as exc:
             self._report_runtime_error(exc)
             self._close_connection()
+
+    def _drain_received_frames(self) -> None:
+        for _index in range(min(len(self.pending_rx_frames), MAX_RX_FRAMES_PER_POLL)):
+            self._handle_received_frame(self.pending_rx_frames.popleft())
 
     def _handle_received_frame(self, data: bytes, known_command: dict[str, Any] | None = None) -> None:
         command = known_command
@@ -1806,8 +1829,8 @@ class SerialConsole(QMainWindow):
         command: dict[str, Any] | None,
         frame_spec: dict[str, Any] | None,
     ) -> None:
+        self._trim_log_history()
         row = self.log_table.rowCount()
-        self.log_table.insertRow(row)
         now = time.strftime("%H:%M:%S") + f".{int(time.time() * 1000) % 1000:03d}"
         try:
             text_preview = data.decode("utf-8").replace("\r", "\\r").replace("\n", "\\n")
@@ -1825,26 +1848,75 @@ class SerialConsole(QMainWindow):
                 "frame_spec": frame_spec,
             }
         )
-        values = [now, direction, command_name, format_hex(data), text_preview]
-        for column, value in enumerate(values):
-            item = QTableWidgetItem(value)
-            item.setToolTip(value)
-            if column == 1:
-                item.setForeground(Qt.GlobalColor.darkGreen if direction == "RX" else Qt.GlobalColor.darkBlue)
-            self.log_table.setItem(row, column, item)
-        self.log_table.scrollToBottom()
-        self.log_table.selectRow(row)
-        self._render_frame_details()
+        self.log_table.setUpdatesEnabled(False)
+        try:
+            self.log_table.insertRow(row)
+            values = [now, direction, command_name, format_hex(data), text_preview]
+            for column, value in enumerate(values):
+                item = QTableWidgetItem(value)
+                item.setToolTip(value)
+                if column == 1:
+                    item.setForeground(Qt.GlobalColor.darkGreen if direction == "RX" else Qt.GlobalColor.darkBlue)
+                self.log_table.setItem(row, column, item)
+        finally:
+            self.log_table.setUpdatesEnabled(True)
+
+        if self.auto_follow_log:
+            if frame_spec and frame_spec.get("repeat_group"):
+                self._schedule_live_detail_refresh()
+            else:
+                self.detail_refresh_timer.stop()
+                self._select_latest_log_and_render()
         self.statusBar().showMessage(
             self._t("traffic_status", direction=direction, count=len(data), command=command_name)
         )
 
+    def _trim_log_history(self) -> None:
+        row_count = self.log_table.rowCount()
+        if row_count < MAX_TRAFFIC_ROWS:
+            return
+        remove_count = min(TRAFFIC_TRIM_ROWS, row_count)
+        selected_row = self.log_table.currentRow()
+        blocker = QSignalBlocker(self.log_table)
+        self.log_table.setUpdatesEnabled(False)
+        try:
+            for _index in range(remove_count):
+                self.log_table.removeRow(0)
+            del self.log_entries[:remove_count]
+            if not self.auto_follow_log and self.log_table.rowCount():
+                self.log_table.selectRow(max(0, selected_row - remove_count))
+        finally:
+            self.log_table.setUpdatesEnabled(True)
+            del blocker
+        if not self.auto_follow_log:
+            self._render_frame_details()
+
+    def _schedule_live_detail_refresh(self) -> None:
+        elapsed_ms = (time.monotonic() - self.last_detail_render_at) * 1000
+        if elapsed_ms >= LIVE_DETAIL_REFRESH_MS and not self.detail_refresh_timer.isActive():
+            self._select_latest_log_and_render()
+            return
+        if not self.detail_refresh_timer.isActive():
+            self.detail_refresh_timer.start(max(1, int(LIVE_DETAIL_REFRESH_MS - elapsed_ms)))
+
+    def _select_latest_log_and_render(self) -> None:
+        if not self.auto_follow_log or not self.log_table.rowCount():
+            return
+        blocker = QSignalBlocker(self.log_table)
+        self.log_table.selectRow(self.log_table.rowCount() - 1)
+        del blocker
+        self.log_table.scrollToBottom()
+        self._render_frame_details()
+
     def _show_selected_log_details(self) -> None:
+        self.detail_refresh_timer.stop()
+        self.auto_follow_log = self.log_table.currentRow() == self.log_table.rowCount() - 1
         self._render_frame_details()
 
     def _render_frame_details(self) -> None:
         if not hasattr(self, "decoded_table"):
             return
+        self.last_detail_render_at = time.monotonic()
         framing = self.protocol.get("framing") if self.protocol else None
         details: list[dict[str, str]] = []
         row = self.log_table.currentRow() if hasattr(self, "log_table") else -1
@@ -1887,9 +1959,12 @@ class SerialConsole(QMainWindow):
                 self.decoded_table.setItem(row, column, item)
 
     def _clear_output(self) -> None:
+        self.detail_refresh_timer.stop()
         self.log_table.setRowCount(0)
         self.log_entries.clear()
         self.decoded_table.setRowCount(0)
+        self.auto_follow_log = True
+        self.last_detail_render_at = 0.0
         self.statusBar().showMessage(self._t("output_cleared"))
 
     def _report_runtime_error(self, error: Exception) -> None:

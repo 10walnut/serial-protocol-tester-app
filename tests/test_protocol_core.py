@@ -27,6 +27,24 @@ from protocol_core import (  # noqa: E402
 
 
 class ProtocolCoreTests(unittest.TestCase):
+    def test_at32_realtime_frame_splits_at_100ms_stream_boundary(self) -> None:
+        frame = bytes.fromhex(
+            "AA 55 10 25 EA 07 09 02 0C 02 1A 93 02 7C FF FF FF 9B FF FF FF "
+            "5B 00 00 00 D2 FF FF FF 45 FF 9C 00 1B 10 43 00 12 00 06 00 8F"
+        )
+        framing = {
+            "header": "AA 55",
+            "length_offset": 3,
+            "length_size": 1,
+            "payload_offset": 4,
+            "checksum_length": 1,
+            "max_frame_length": 260,
+        }
+        frames, remainder = split_framed_bytes(frame * 3, framing)
+        self.assertEqual(frames, [frame, frame, frame])
+        self.assertEqual(remainder, b"")
+        self.assertEqual(sum(frame[2:-1]) & 0xFF, frame[-1])
+
     def setUp(self) -> None:
         self.sample_path = APP_ROOT / "sample_protocol.json"
         self.protocol = load_protocol(self.sample_path)
