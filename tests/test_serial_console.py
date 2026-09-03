@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = PROJECT_ROOT / "app"
 sys.path.insert(0, str(APP_ROOT))
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -287,12 +287,21 @@ class SerialConsoleUiTests(unittest.TestCase):
         self.assertTrue(dialog.update_button.isEnabled())
         tabs = dialog.findChild(QTabWidget)
         self.assertEqual(tabs.count(), 3)
-        for name in ("qr_donate-alipay", "qr_donate-wechat"):
+        tabs.setCurrentIndex(2)
+        dialog.resize(760, 620)
+        dialog.show()
+        self.app.processEvents()
+        qr_labels = []
+        for name in ("qr_donate-alipay", "qr_donate-wechat", "qr_donate-kofi"):
             qr_label = dialog.findChild(QLabel, name)
             self.assertIsNotNone(qr_label)
             self.assertIsNotNone(qr_label.pixmap())
-            self.assertEqual(qr_label.pixmap().size().width(), 290)
-            self.assertEqual(qr_label.pixmap().size().height(), 290)
+            self.assertEqual(qr_label.pixmap().size().width(), 210)
+            self.assertEqual(qr_label.pixmap().size().height(), 210)
+            qr_labels.append(qr_label)
+        left_edges = [label.mapTo(dialog, QPoint(0, 0)).x() for label in qr_labels]
+        self.assertLessEqual(left_edges[0] + 210, left_edges[1])
+        self.assertLessEqual(left_edges[1] + 210, left_edges[2])
         dialog.close()
 
     def test_baudrate_is_preloaded_editable_and_manual_value_is_preserved(self) -> None:

@@ -88,7 +88,7 @@ ROOT = resource_root()
 SAMPLE_PROTOCOL = ROOT / "sample_protocol.json"
 ASSETS_DIR = ROOT / "assets"
 LOGO_PATH = ASSETS_DIR / "serial-protocol-tester-logo.png"
-APP_VERSION = "1.3.3"
+APP_VERSION = "1.3.4"
 AUTHOR = "十个核桃 / 10walnut"
 PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-app"
 SKILL_PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-skill"
@@ -709,6 +709,7 @@ class AboutDialog(QDialog):
         codes.setSpacing(20)
         codes.addWidget(self._donation_column(ASSETS_DIR / "donate-alipay.jpg", self._t("about_alipay")), 1)
         codes.addWidget(self._donation_column(ASSETS_DIR / "donate-wechat.png", self._t("about_wechat")), 1)
+        codes.addWidget(self._donation_column(ASSETS_DIR / "donate-kofi.png", "Ko-fi"), 1)
         layout.addLayout(codes, 1)
         return page
 
@@ -731,8 +732,8 @@ class AboutDialog(QDialog):
         if not pixmap.isNull():
             label.setPixmap(
                 pixmap.scaled(
-                    290,
-                    290,
+                    210,
+                    210,
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation,
                 )
