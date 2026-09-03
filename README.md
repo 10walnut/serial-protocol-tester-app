@@ -42,6 +42,14 @@ Serial Protocol Tester 读取标准 `serial_protocol.v1` JSON，把原厂协议�
 | 4. 联机验证 | 连接真实设备、内部模拟器或虚拟 COM 对 | 直接测试功能并记录 TX/RX |
 | 5. 定位问题 | 比较预期帧、TX、RX 和字段解析 | 快速区分上位机、下位机、协议脚本与链路问题 |
 
+### 自定义变量组帧发送
+
+Skill 会根据原厂协议，把日期、时间、设备地址、工作模式、阈值、标定值和传感器数据生成为可编辑变量，而不是把示例数据写死。每个变量都可以包含取值范围、单位、步进和计算公式；不同协议加载后会显示各自需要的输入项，形成更个性化的功能测试界面。
+
+![修改协议自定义变量并生成串口数据](docs/images/custom-variable-send-zh.png)
+
+双击命令后可直接输入数值或使用加减按钮调整。点击“生成并发送”，软件会按 JSON 中的字节位置、大小端、比例和偏移公式完成编码，并重新计算帧长度与校验和；发送后的原始 HEX 和接收解析仍会完整记录，便于核对计算结果。
+
 ### 一分钟开始
 
 1. 从 [Releases](https://github.com/10walnut/serial-protocol-tester-app/releases/latest) 下载 `SerialProtocolTester.exe`。
@@ -151,6 +159,14 @@ It connects to physical devices or emulates a device for another host applicatio
 | 3. Build the console | Load the JSON in this app | Get command buttons, inputs, replies, and field explanations |
 | 4. Exercise the link | Connect hardware, the internal simulator, or a virtual COM pair | Run functions and capture actual TX/RX |
 | 5. Isolate the fault | Compare expected bytes, TX, RX, and decoding | Separate host, device, script, and transport problems |
+
+### Protocol-Specific Variable Sending
+
+The Skill converts changing dates, times, addresses, modes, thresholds, calibration values, and sensor samples into editable variables instead of freezing sample bytes. Each protocol can define its own inputs, ranges, units, steps, and formulas, giving the loaded console a device-specific workflow.
+
+![Edit custom protocol variables and generate serial data](docs/images/custom-variable-send-zh.png)
+
+Open a command, type values or use the step controls, and select **Generate and Send**. The App encodes each value at the documented byte position with the configured endianness, scaling, and offset, then recalculates frame lengths and checksums. Raw TX and parsed RX remain available for verification.
 
 ### Quick Start
 
