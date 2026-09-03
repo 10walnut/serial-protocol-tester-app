@@ -4,7 +4,7 @@
 
 <h1 align="center">Serial Protocol Tester / 串口协议测试器</h1>
 
-<p align="center">PySide6 上位机、下位机与虚拟串口调试工具<br>PySide6 host, device, and virtual serial-port testing console</p>
+<p align="center">配合 Skill，从原厂协议文档快速得到功能测试上位机<br>快速区分上位机、下位机和串口链路问题，也可直接作为轻量上位机使用<br>Turn vendor protocol documents into a working test console and isolate host, device, or link faults</p>
 
 <p align="center">
   <a href="https://github.com/10walnut/serial-protocol-tester-app/stargazers"><img src="https://img.shields.io/github/stars/10walnut/serial-protocol-tester-app?style=flat-square&logo=github" alt="GitHub stars"></a>
@@ -28,7 +28,19 @@
 
 ## 中文
 
-Serial Protocol Tester 读取标准 `serial_protocol.v1` JSON，把协议文档里的命令、应答、变量公式和周期数据变成可直接操作的按钮。它既能连接真实下位机，也能模拟下位机供其他上位机测试。
+Serial Protocol Tester 读取标准 `serial_protocol.v1` JSON，把原厂协议里的命令、应答、变量公式和周期数据变成可直接操作的按钮。配套 Skill 负责从协议文档生成 JSON，本软件负责实际收发和解析，从资料到可用功能测试上位机无需重复编写临时界面与组帧代码。
+
+它既能连接真实下位机，也能模拟下位机供其他上位机测试。对照协议预期、实际 TX 和实际 RX，可以快速判断问题来自上位机实现、下位机响应、协议定义还是串口链路；验证完成后，也可直接作为设备的简单功能上位机使用。
+
+### 从原厂协议到功能测试
+
+| 阶段 | 操作 | 结果 |
+| --- | --- | --- |
+| 1. 准备资料 | 上传原厂协议、命令表、示例帧或抓包 | 保留真实帧格式与时序 |
+| 2. 转换协议 | 使用 [Serial Protocol Tester Skill](https://github.com/10walnut/serial-protocol-tester-skill) | 得到校验通过的 `serial_protocol.v1` JSON |
+| 3. 生成功能界面 | 在本软件中加载 JSON | 自动得到命令按钮、参数输入、应答规则和字段解释 |
+| 4. 联机验证 | 连接真实设备、内部模拟器或虚拟 COM 对 | 直接测试功能并记录 TX/RX |
+| 5. 定位问题 | 比较预期帧、TX、RX 和字段解析 | 快速区分上位机、下位机、协议脚本与链路问题 |
 
 ### 一分钟开始
 
@@ -47,6 +59,18 @@ Serial Protocol Tester 读取标准 `serial_protocol.v1` JSON，把协议文档�
 | 测试自己开发的上位机 | 下位机 | COM10 等虚拟串口 | 上位机打开 COM11 |
 | 单机验证协议按钮和应答 | 上位机 | 内部虚拟链路 | 软件内部模拟器 |
 | 编写设备模拟程序 | 上位机 | `loop://` 或虚拟串口 | 测试程序 |
+
+只需要常用命令收发时，可直接把本软件作为轻量上位机：加载协议、打开真实 COM 口、填写参数并点击命令即可，不必启用虚拟串口或下位机模拟。
+
+### 快速区分问题点
+
+| 现象 | 优先检查 |
+| --- | --- |
+| 实际 TX 与协议预期不一致 | 协议 JSON 的模板、变量公式、校验范围和输入参数 |
+| TX 正确，但对端没有收到 | COM 端口、波特率、接线、驱动和虚拟串口配对 |
+| 对端收到请求，但没有生成应答 | 下位机命令匹配、固件处理和应答时序 |
+| RX 原始字节正确，但字段显示错误 | JSON 的帧长、偏移、大小端、符号位和换算公式 |
+| 内部模拟通过，真实设备失败 | 真实链路参数、硬件接线或设备实现 |
 
 ### 上位机连接真实设备
 
@@ -112,30 +136,21 @@ python -m unittest discover -s tests -p "test_*.py" -v
 
 打包脚本会生成多尺寸 Windows 图标、隔离 Qt DLL、嵌入管理员清单，并运行打包后的 `--self-test`。输出位于 `dist/SerialProtocolTester.exe`。
 
-### 赞赏
-
-如果这个工具节省了串口调试时间，可以通过 Ko-fi、支付宝或微信支持后续维护。感谢每一位使用者、反馈者和贡献者。
-
-<p align="center">
-  <a href="https://ko-fi.com/B7J7268GW1"><img src="https://ko-fi.com/img/githubbutton_sm.svg" alt="Support on Ko-fi"></a>
-</p>
-
-<table align="center">
-  <tr><th>支付宝</th><th>微信赞赏</th><th>Ko-fi</th></tr>
-  <tr>
-    <td><img src="app/assets/donate-alipay.jpg" width="180" alt="支付宝赞赏二维码"></td>
-    <td><img src="app/assets/donate-wechat.png" width="180" alt="微信赞赏二维码"></td>
-    <td><img src="app/assets/donate-kofi.png" width="180" alt="Ko-fi support QR code"></td>
-  </tr>
-</table>
-
-软件内也可通过“关于 → 支持作者”查看三个二维码：
-
-![软件赞赏页面](docs/images/app-support-zh.png)
-
 ## English
 
-Serial Protocol Tester executes validated `serial_protocol.v1` files as an interactive PySide6 host/device simulator. It connects to physical devices, emulates a device for another host application, schedules multiple replies, rebuilds variable frames, and explains TX/RX bytes.
+Serial Protocol Tester is the runtime half of a fast path from vendor protocol documents to a working functional test console. The companion Skill produces validated `serial_protocol.v1` JSON; this app turns it into command buttons, editable parameters, response rules, live traffic, and byte-level explanations without rebuilding a temporary UI and parser for every device.
+
+It connects to physical devices or emulates a device for another host application. Comparing the documented frame, actual TX, and actual RX helps isolate faults in the host, device, protocol definition, or serial link. Once validation is complete, the app can continue serving as a lightweight host for routine device functions.
+
+### From Document to Test
+
+| Stage | Action | Result |
+| --- | --- | --- |
+| 1. Collect sources | Provide the vendor specification, command tables, captures, and sample frames | Preserve the real framing and timing |
+| 2. Convert | Run the [Serial Protocol Tester Skill](https://github.com/10walnut/serial-protocol-tester-skill) | Produce validated `serial_protocol.v1` JSON |
+| 3. Build the console | Load the JSON in this app | Get command buttons, inputs, replies, and field explanations |
+| 4. Exercise the link | Connect hardware, the internal simulator, or a virtual COM pair | Run functions and capture actual TX/RX |
+| 5. Isolate the fault | Compare expected bytes, TX, RX, and decoding | Separate host, device, script, and transport problems |
 
 ### Quick Start
 
@@ -158,6 +173,18 @@ In **Device** mode, a matched request sends `response` first and then runs `foll
 
 For two-application testing, install the official [signed com0com package](https://sourceforge.net/projects/com0com/files/com0com/3.0.0.0/com0com-3.0.0.0-i386-and-x64-signed.zip/download), create COM10 ↔ COM11 in **Virtual ports**, open one side here, and open the other side in your host application. Both ports must appear under Windows **Ports (COM & LPT)**.
 
+For routine command/response work, the app can be used directly as a lightweight host: load a protocol, open a physical COM port, enter parameters, and run commands without configuring virtual ports or device simulation.
+
+### Fast Fault Isolation
+
+| Symptom | Check first |
+| --- | --- |
+| Actual TX differs from the documented frame | JSON templates, formulas, checksum coverage, and user inputs |
+| TX is correct but the peer receives nothing | COM selection, baud rate, wiring, driver, and virtual-port pairing |
+| The peer receives the request but sends no reply | Device command matching, firmware handling, and response timing |
+| Raw RX is correct but decoded fields are wrong | Frame length, offsets, endianness, signedness, and formulas in JSON |
+| Internal simulation passes but hardware fails | Physical-link settings, wiring, or device implementation |
+
 ### Source and Packaging
 
 ```powershell
@@ -169,10 +196,6 @@ python -m unittest discover -s tests -p "test_*.py" -v
 ```
 
 The build script creates `dist/SerialProtocolTester.exe`, embeds the multi-resolution icon and administrator manifest, isolates Qt dependencies, and runs a packaged self-test.
-
-### Support
-
-Support ongoing compatibility work, protocol examples, and public releases through [Ko-fi](https://ko-fi.com/B7J7268GW1), Alipay, or WeChat. The three QR codes are shown in the Chinese section and inside **About → Support**.
 
 ### Credits
 
