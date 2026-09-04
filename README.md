@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="app/assets/serial-protocol-tester-logo.png" width="112" alt="Serial Protocol Tester logo">
+  <img src="app/assets/serial-protocol-tester-logo.png" width="112" alt="Serial Protocol Assistant logo">
 </p>
 
-<h1 align="center">Serial Protocol Tester / 串口协议测试器</h1>
+<h1 align="center">串口协议助手 / Serial Protocol Assistant</h1>
 
 <p align="center">配合 Skill，从原厂协议文档快速得到功能测试上位机<br>快速区分上位机、下位机和串口链路问题，也可直接作为轻量上位机使用<br>Turn vendor protocol documents into a working test console and isolate host, device, or link faults</p>
 
@@ -24,11 +24,17 @@
   <a href="https://github.com/10walnut/serial-protocol-tester-app/releases/latest">下载最新版</a>
 </p>
 
-![串口协议测试器主界面](docs/images/app-main-zh.png)
+![串口协议助手默认夜间主题](docs/images/app-main-dark-zh.png)
 
 ## 中文
 
-Serial Protocol Tester 读取标准 `serial_protocol.v1` JSON，把原厂协议里的命令、应答、变量公式和周期数据变成可直接操作的按钮。配套 Skill 负责从协议文档生成 JSON，本软件负责实际收发和解析，从资料到可用功能测试上位机无需重复编写临时界面与组帧代码。
+首次启动默认开启夜间主题。使用顶部“夜间主题”开关可即时切换深色与浅色，软件会记住你的选择。主题切换不会断开连接、清空通讯记录或中断周期数据；参数输入、关于页和虚拟串口弹窗也会同步切换。
+
+[查看浅色主题](docs/images/app-main-light-zh.png)
+
+新版本程序名为 `SerialProtocolAssistant.exe`。GitHub 仓库地址和 `serial_protocol.v1` 协议格式不变，已有协议 JSON 可继续使用。
+
+Serial Protocol Assistant 读取标准 `serial_protocol.v1` JSON，把原厂协议里的命令、应答、变量公式和周期数据变成可直接操作的按钮。配套 Skill 负责从协议文档生成 JSON，本软件负责实际收发和解析，从资料到可用功能测试上位机无需重复编写临时界面与组帧代码。
 
 它既能连接真实下位机，也能模拟下位机供其他上位机测试。对照协议预期、实际 TX 和实际 RX，可以快速判断问题来自上位机实现、下位机响应、协议定义还是串口链路；验证完成后，也可直接作为设备的简单功能上位机使用。
 
@@ -37,7 +43,7 @@ Serial Protocol Tester 读取标准 `serial_protocol.v1` JSON，把原厂协议�
 | 阶段 | 操作 | 结果 |
 | --- | --- | --- |
 | 1. 准备资料 | 上传原厂协议、命令表、示例帧或抓包 | 保留真实帧格式与时序 |
-| 2. 转换协议 | 使用 [Serial Protocol Tester Skill](https://github.com/10walnut/serial-protocol-tester-skill) | 得到校验通过的 `serial_protocol.v1` JSON |
+| 2. 转换协议 | 使用 [Serial Protocol Assistant Skill](https://github.com/10walnut/serial-protocol-tester-skill) | 得到校验通过的 `serial_protocol.v1` JSON |
 | 3. 生成功能界面 | 在本软件中加载 JSON | 自动得到命令按钮、参数输入、应答规则和字段解释 |
 | 4. 联机验证 | 连接真实设备、内部模拟器或虚拟 COM 对 | 直接测试功能并记录 TX/RX |
 | 5. 定位问题 | 比较预期帧、TX、RX 和字段解析 | 快速区分上位机、下位机、协议脚本与链路问题 |
@@ -46,18 +52,18 @@ Serial Protocol Tester 读取标准 `serial_protocol.v1` JSON，把原厂协议�
 
 Skill 会根据原厂协议，把日期、时间、设备地址、工作模式、阈值、标定值和传感器数据生成为可编辑变量，而不是把示例数据写死。每个变量都可以包含取值范围、单位、步进和计算公式；不同协议加载后会显示各自需要的输入项，形成更个性化的功能测试界面。
 
-![修改协议自定义变量并生成串口数据](docs/images/custom-variable-send-zh.png)
+![修改协议自定义变量并生成串口数据](docs/images/variables-dark-zh.png)
 
 双击命令后可直接输入数值或使用加减按钮调整。点击“生成并发送”，软件会按 JSON 中的字节位置、大小端、比例和偏移公式完成编码，并重新计算帧长度与校验和；发送后的原始 HEX 和接收解析仍会完整记录，便于核对计算结果。
 
 ### 一分钟开始
 
-1. 从 [Releases](https://github.com/10walnut/serial-protocol-tester-app/releases/latest) 下载 `SerialProtocolTester.exe`。
+1. 从 [Releases](https://github.com/10walnut/serial-protocol-tester-app/releases/latest) 下载 `SerialProtocolAssistant.exe`。
 2. 运行软件并允许管理员权限；该权限用于创建和检查 Windows 虚拟串口。
 3. 点击“加载协议”，选择 Skill 生成的 JSON 或自带的 `app/sample_protocol.json`。
 4. 选择角色、通信通道和串口参数，点击“打开”，再双击命令开始测试。
 
-> 没有协议 JSON？使用配套的 [Serial Protocol Tester Skill](https://github.com/10walnut/serial-protocol-tester-skill) 读取 Word、Markdown、PDF、Excel、命令表或抓包并生成。
+> 没有协议 JSON？使用配套的 [Serial Protocol Assistant Skill](https://github.com/10walnut/serial-protocol-tester-skill) 读取 Word、Markdown、PDF、Excel、命令表或抓包并生成。
 
 ### 选择测试方式
 
@@ -142,11 +148,15 @@ python -m unittest discover -s tests -p "test_*.py" -v
 .\build_serial_console.ps1
 ```
 
-打包脚本会生成多尺寸 Windows 图标、隔离 Qt DLL、嵌入管理员清单，并运行打包后的 `--self-test`。输出位于 `dist/SerialProtocolTester.exe`。
+打包脚本会生成多尺寸 Windows 图标、隔离 Qt DLL、嵌入管理员清单，并运行打包后的 `--self-test`。输出位于 `dist/SerialProtocolAssistant.exe`。
 
 ## English
 
-Serial Protocol Tester is the runtime half of a fast path from vendor protocol documents to a working functional test console. The companion Skill produces validated `serial_protocol.v1` JSON; this app turns it into command buttons, editable parameters, response rules, live traffic, and byte-level explanations without rebuilding a temporary UI and parser for every device.
+Dark mode is enabled on first launch. Use the **Dark theme** switch in the top bar to change themes immediately; the app remembers your choice. Switching does not disconnect the port, clear traffic, or interrupt periodic replies, and dialogs follow the selected theme.
+
+The executable is now `SerialProtocolAssistant.exe`. Repository URLs and the `serial_protocol.v1` format are unchanged, so existing protocol files continue to work.
+
+Serial Protocol Assistant is the runtime half of a fast path from vendor protocol documents to a working functional test console. The companion Skill produces validated `serial_protocol.v1` JSON; this app turns it into command buttons, editable parameters, response rules, live traffic, and byte-level explanations without rebuilding a temporary UI and parser for every device.
 
 It connects to physical devices or emulates a device for another host application. Comparing the documented frame, actual TX, and actual RX helps isolate faults in the host, device, protocol definition, or serial link. Once validation is complete, the app can continue serving as a lightweight host for routine device functions.
 
@@ -155,7 +165,7 @@ It connects to physical devices or emulates a device for another host applicatio
 | Stage | Action | Result |
 | --- | --- | --- |
 | 1. Collect sources | Provide the vendor specification, command tables, captures, and sample frames | Preserve the real framing and timing |
-| 2. Convert | Run the [Serial Protocol Tester Skill](https://github.com/10walnut/serial-protocol-tester-skill) | Produce validated `serial_protocol.v1` JSON |
+| 2. Convert | Run the [Serial Protocol Assistant Skill](https://github.com/10walnut/serial-protocol-tester-skill) | Produce validated `serial_protocol.v1` JSON |
 | 3. Build the console | Load the JSON in this app | Get command buttons, inputs, replies, and field explanations |
 | 4. Exercise the link | Connect hardware, the internal simulator, or a virtual COM pair | Run functions and capture actual TX/RX |
 | 5. Isolate the fault | Compare expected bytes, TX, RX, and decoding | Separate host, device, script, and transport problems |
@@ -164,15 +174,15 @@ It connects to physical devices or emulates a device for another host applicatio
 
 The Skill converts changing dates, times, addresses, modes, thresholds, calibration values, and sensor samples into editable variables instead of freezing sample bytes. Each protocol can define its own inputs, ranges, units, steps, and formulas, giving the loaded console a device-specific workflow.
 
-![Edit custom protocol variables and generate serial data](docs/images/custom-variable-send-zh.png)
+![Edit custom protocol variables and generate serial data](docs/images/variables-dark-zh.png)
 
 Open a command, type values or use the step controls, and select **Generate and Send**. The App encodes each value at the documented byte position with the configured endianness, scaling, and offset, then recalculates frame lengths and checksums. Raw TX and parsed RX remain available for verification.
 
 ### Quick Start
 
-1. Download `SerialProtocolTester.exe` from the [latest release](https://github.com/10walnut/serial-protocol-tester-app/releases/latest).
+1. Download `SerialProtocolAssistant.exe` from the [latest release](https://github.com/10walnut/serial-protocol-tester-app/releases/latest).
 2. Run it and approve administrator access, which is used for virtual-port creation and diagnostics.
-3. Load a JSON file generated by the companion [Serial Protocol Tester Skill](https://github.com/10walnut/serial-protocol-tester-skill), or use `app/sample_protocol.json`.
+3. Load a JSON file generated by the companion [Serial Protocol Assistant Skill](https://github.com/10walnut/serial-protocol-tester-skill), or use `app/sample_protocol.json`.
 4. Select a role and transport, open the connection, then double-click a command.
 
 ### Test Workflows
@@ -211,7 +221,7 @@ python -m unittest discover -s tests -p "test_*.py" -v
 .\build_serial_console.ps1
 ```
 
-The build script creates `dist/SerialProtocolTester.exe`, embeds the multi-resolution icon and administrator manifest, isolates Qt dependencies, and runs a packaged self-test.
+The build script creates `dist/SerialProtocolAssistant.exe`, embeds the multi-resolution icon and administrator manifest, isolates Qt dependencies, and runs a packaged self-test.
 
 ### Credits
 

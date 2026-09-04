@@ -1,10 +1,10 @@
-# Serial Protocol Tester 视频推荐逐字稿
+# Serial Protocol Assistant 视频推荐逐字稿
 
 建议时长：2 分 40 秒至 3 分钟。录制分辨率建议使用 1920×1080，鼠标移动保持平稳，涉及输入时可提前准备协议 JSON 和一组演示数据。
 
 ## 录制准备
 
-- 打开 Serial Protocol Tester，但先不要加载协议。
+- 打开 Serial Protocol Assistant，但先不要加载协议。
 - 准备一份由 Skill 生成的 `serial_protocol.v1` JSON，例如 AT32L021 下位机协议。
 - 演示阶段优先选择“上位机 + 内部虚拟链路”，避免真实硬件状态影响录制。
 - 提前确认 ERTC 对时、实时数据、停止实时数据等命令可以正常演示。
@@ -14,7 +14,7 @@
 
 | 时间 | 桌面录屏操作 | 旁白逐字稿 |
 | --- | --- | --- |
-| 00:00–00:15 | 显示原厂协议文档，再切换到软件主界面。 | 做串口开发时，最费时间的往往不是收发几个字节，而是把原厂协议整理成测试命令、计算公式和解析界面。今天分享一款开源工具，Serial Protocol Tester 串口协议测试器。 |
+| 00:00–00:15 | 显示原厂协议文档，再切换到软件主界面。 | 做串口开发时，最费时间的往往不是收发几个字节，而是把原厂协议整理成测试命令、计算公式和解析界面。今天分享一款开源工具，Serial Protocol Assistant 串口协议助手。 |
 | 00:15–00:35 | 点击“加载协议”，选择准备好的 JSON；镜头停留在自动生成的命令列表。 | 配套的协议转换 Skill 可以读取 Word、PDF、Markdown、Excel 命令表、抓包和示例帧，生成标准协议 JSON。把文件加载到软件后，命令、说明、波特率、应答规则和字段解析会直接出现在界面中。 |
 | 00:35–01:00 | 展示角色、通信通道、波特率；切换“上位机”“下位机”和“内部虚拟链路”，最后回到上位机内部虚拟链路。 | 软件可以作为上位机连接真实下位机，也可以切换成下位机，通过虚拟 COM 口测试自己开发的上位机。没有硬件时，还能使用内部虚拟链路先验证协议按钮、组帧和应答逻辑。 |
 | 01:00–01:30 | 双击“ERTC 对时”；逐项修改年月日时分秒；点击“生成并发送”。 | 对于日期、时间、地址、阈值、标定值或传感器数据，Skill 会按照原厂协议生成可修改的自定义变量。发送前可以手动输入，也可以使用加减按钮调整。点击生成并发送后，软件会按照字节位置、大小端、比例和偏移公式自动组帧，并重新计算长度和校验和。 |
@@ -27,7 +27,7 @@
 
 | Time | Desktop recording action | Verbatim narration |
 | --- | --- | --- |
-| 00:00–00:15 | Show a vendor protocol document, then switch to the main application window. | In serial development, sending a few bytes is rarely the hardest part. The real cost is turning a vendor specification into test commands, formulas, and a usable decoding interface. This is Serial Protocol Tester, an open-source tool built for that workflow. |
+| 00:00–00:15 | Show a vendor protocol document, then switch to the main application window. | In serial development, sending a few bytes is rarely the hardest part. The real cost is turning a vendor specification into test commands, formulas, and a usable decoding interface. This is Serial Protocol Assistant, an open-source tool built for that workflow. |
 | 00:15–00:35 | Select **Load Protocol**, open the prepared JSON, and pause on the generated command list. | The companion protocol Skill can read Word, PDF, Markdown, spreadsheet command tables, packet captures, and sample frames. It produces standard protocol JSON. Once loaded, the app immediately shows the commands, descriptions, baud rate, response rules, and field definitions. |
 | 00:35–01:00 | Show the role, transport, and baud controls. Switch between Host, Device, and Internal Virtual Link, then return to Host with the internal link. | The application can act as a host connected to real hardware, or emulate a device through a virtual COM pair while you test another host program. If hardware is not available, the internal virtual link can verify command buttons, frame generation, and response behavior first. |
 | 01:00–01:30 | Open the ERTC time-sync command, change the date and time fields, then select **Generate and Send**. | Dates, times, addresses, thresholds, calibration values, and sensor samples do not have to remain fixed example bytes. The Skill creates editable variables from the vendor protocol. Before sending, you can type a value or use the step controls. The app then applies byte positions, endianness, scaling, and offset formulas, and recalculates the frame length and checksum. |

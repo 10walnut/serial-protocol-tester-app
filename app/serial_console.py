@@ -6,6 +6,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from collections import deque
 from pathlib import Path
@@ -13,8 +14,8 @@ from typing import Any
 
 import serial
 from serial.tools import list_ports
-from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSignalBlocker, QTimer, Qt, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QIcon, QIntValidator, QPixmap
+from PySide6.QtCore import QAbstractTableModel, QModelIndex, QSettings, QSignalBlocker, QTimer, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QFont, QIcon, QIntValidator, QPixmap
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QApplication,
@@ -38,6 +39,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QSpinBox,
+    QSizePolicy,
     QSplitter,
     QStatusBar,
     QStyle,
@@ -75,6 +77,7 @@ from virtual_ports import (
     virtual_ports_ready,
 )
 from i18n_extra import EXTRA_UI_TEXT, LANGUAGE_OPTIONS
+from themes import ThemeSwitch, apply_theme, direction_color, set_status
 
 
 def resource_root() -> Path:
@@ -88,11 +91,11 @@ ROOT = resource_root()
 SAMPLE_PROTOCOL = ROOT / "sample_protocol.json"
 ASSETS_DIR = ROOT / "assets"
 LOGO_PATH = ASSETS_DIR / "serial-protocol-tester-logo.png"
-APP_VERSION = "1.3.4"
+APP_VERSION = "1.4.0"
 AUTHOR = "十个核桃 / 10walnut"
 PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-app"
 SKILL_PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-skill"
-SKILL_DOWNLOAD_URL = "https://github.com/10walnut/serial-protocol-tester-skill/archive/refs/heads/main.zip"
+SKILL_DOWNLOAD_URL = "https://github.com/10walnut/serial-protocol-tester-skill/releases/latest/download/serial-protocol-assistant-skill.zip"
 LATEST_RELEASE_API = "https://api.github.com/repos/10walnut/serial-protocol-tester-app/releases/latest"
 COMMON_BAUDRATES = (
     300,
@@ -155,8 +158,8 @@ def relaunch_as_admin() -> bool:
     if result <= 32:
         ctypes.windll.user32.MessageBoxW(
             None,
-            f"无法以管理员权限启动串口协议测试器（错误代码 {result}）。",
-            "串口协议测试器",
+            f"无法以管理员权限启动串口协议助手（错误代码 {result}）。",
+            "串口协议助手",
             0x10,
         )
     return True
@@ -215,7 +218,9 @@ def open_external_url(url: str) -> bool:
 
 UI_TEXT = {
     "zh": {
-        "title": "串口协议测试器",
+        "title": "串口协议助手",
+        "dark_theme": "夜间主题",
+        "theme_tooltip": "切换深色或浅色主题，自动记住选择",
         "language_button": "EN",
         "no_protocol": "未加载协议",
         "load_protocol": "加载协议",
@@ -328,8 +333,8 @@ UI_TEXT = {
         "variable_increase": "增加 {label}",
         "formula": "公式",
         "about_tooltip": "关于与检查更新",
-        "about_title": "关于串口协议测试器",
-        "about_app": "串口协议测试器",
+        "about_title": "关于串口协议助手",
+        "about_app": "串口协议助手",
         "about_version": "版本 {version}",
         "about_author": "作者：{author}",
         "about_project": "软件项目地址",
@@ -348,15 +353,17 @@ UI_TEXT = {
         "about_tab_skill": "Skill 下载与使用",
         "about_tab_support": "支持作者",
         "about_support_message": "如果这个工具为你的串口调试节省了时间，欢迎请作者喝杯咖啡。每一份支持都会用于继续修复兼容性、补充协议示例并维护开源版本。感谢你的认可与支持。",
-        "about_skill_intro": "Serial Protocol Tester Skill 可以读取协议文档并生成本软件可加载的 serial_protocol.v1 JSON。",
+        "about_skill_intro": "Serial Protocol Assistant Skill 可以读取协议文档并生成本软件可加载的 serial_protocol.v1 JSON。",
         "about_skill_download": "下载 Skill ZIP",
         "about_skill_open": "打开 Skill 项目与详细教程",
-        "about_skill_steps": "1. 下载 Skill ZIP。\n\n2. Codex：运行 .\\install.ps1 -Target codex\n   Claude Code：运行 .\\install.ps1 -Target claude\n   WorkBuddy / Harness：按项目 README 选择对应目标。\n\n3. 豆包：打开“技能新建”→“上传技能”，直接上传包含 SKILL.md 的 Skill ZIP 压缩包。\n\n4. 提示词示例：\n使用 serial-protocol-tester Skill 读取协议，只输出中文 JSON；生成后运行校验器，并为每个发送和接收字段写明作用与计算公式。",
+        "about_skill_steps": "1. 下载 Skill ZIP。\n\n2. Codex：运行 .\\install.ps1 -Target codex\n   Claude Code：运行 .\\install.ps1 -Target claude\n   WorkBuddy / Harness：按项目 README 选择对应目标。\n\n3. 豆包：打开“技能新建”→“上传技能”，直接上传包含 SKILL.md 的 Skill ZIP 压缩包。\n\n4. 提示词示例：\n使用 serial-protocol-assistant Skill 读取协议，只输出中文 JSON；生成后运行校验器，并为每个发送和接收字段写明作用与计算公式。",
         "about_link_error_title": "无法打开链接",
         "about_link_error_message": "无法调用默认浏览器打开：\n{url}",
     },
     "en": {
-        "title": "Serial Protocol Tester",
+        "title": "Serial Protocol Assistant",
+        "dark_theme": "Dark theme",
+        "theme_tooltip": "Switch between dark and light themes; your choice is saved",
         "language_button": "中文",
         "no_protocol": "No protocol loaded",
         "load_protocol": "Load protocol",
@@ -469,8 +476,8 @@ UI_TEXT = {
         "variable_increase": "Increase {label}",
         "formula": "Formula",
         "about_tooltip": "About and check for updates",
-        "about_title": "About Serial Protocol Tester",
-        "about_app": "Serial Protocol Tester",
+        "about_title": "About Serial Protocol Assistant",
+        "about_app": "Serial Protocol Assistant",
         "about_version": "Version {version}",
         "about_author": "Author: {author}",
         "about_project": "Application repository",
@@ -489,10 +496,10 @@ UI_TEXT = {
         "about_tab_skill": "Download and use Skill",
         "about_tab_support": "Support",
         "about_support_message": "If this tool saves time during serial debugging, you can support its continued development. Contributions help maintain compatibility, add protocol examples, and keep the open-source releases current. Thank you for your support.",
-        "about_skill_intro": "Serial Protocol Tester Skill reads protocol documents and generates serial_protocol.v1 JSON files that this application can load.",
+        "about_skill_intro": "Serial Protocol Assistant Skill reads protocol documents and generates serial_protocol.v1 JSON files that this application can load.",
         "about_skill_download": "Download Skill ZIP",
         "about_skill_open": "Open Skill project and guide",
-        "about_skill_steps": "1. Download the Skill ZIP.\n\n2. Codex: run .\\install.ps1 -Target codex\n   Claude Code: run .\\install.ps1 -Target claude\n   WorkBuddy / Harness: choose the matching target from the repository guide.\n\n3. Doubao: open Create Skill > Upload Skill, then directly upload the Skill ZIP containing SKILL.md.\n\n4. Example prompt:\nUse the serial-protocol-tester Skill, emit one-language JSON, run validation, and explain the purpose and calculation of every transmitted and received field.",
+        "about_skill_steps": "1. Download the Skill ZIP.\n\n2. Codex: run .\\install.ps1 -Target codex\n   Claude Code: run .\\install.ps1 -Target claude\n   WorkBuddy / Harness: choose the matching target from the repository guide.\n\n3. Doubao: open Create Skill > Upload Skill, then directly upload the Skill ZIP containing SKILL.md.\n\n4. Example prompt:\nUse the serial-protocol-assistant Skill, emit one-language JSON, run validation, and explain the purpose and calculation of every transmitted and received field.",
         "about_link_error_title": "Could not open link",
         "about_link_error_message": "The default browser could not open:\n{url}",
     },
@@ -525,7 +532,7 @@ class TrafficLogModel(QAbstractTableModel):
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.ToolTipRole):
             return values[index.column()]
         if role == Qt.ItemDataRole.ForegroundRole and index.column() == 1:
-            return QColor(Qt.GlobalColor.darkGreen if values[1] == "RX" else Qt.GlobalColor.darkBlue)
+            return direction_color(values[1])
         return None
 
     def headerData(
@@ -541,6 +548,12 @@ class TrafficLogModel(QAbstractTableModel):
     def set_headers(self, headers: list[str]) -> None:
         self.headers = headers
         self.headerDataChanged.emit(Qt.Orientation.Horizontal, 0, self.columnCount() - 1)
+
+    def refresh_colors(self) -> None:
+        if self.entries:
+            self.dataChanged.emit(
+                self.index(0, 1), self.index(len(self.entries) - 1, 1), [Qt.ItemDataRole.ForegroundRole]
+            )
 
     def append_entry(self, entry: dict[str, Any]) -> None:
         if len(self.entries) >= MAX_TRAFFIC_ROWS:
@@ -749,7 +762,7 @@ class AboutDialog(QDialog):
         self.update_status.setText(self._t("about_checking"))
         request = QNetworkRequest(QUrl(LATEST_RELEASE_API))
         request.setRawHeader(b"Accept", b"application/vnd.github+json")
-        request.setRawHeader(b"User-Agent", b"SerialProtocolTester-update-check")
+        request.setRawHeader(b"User-Agent", b"SerialProtocolAssistant-update-check")
         reply = self.network.get(request)
         reply.finished.connect(lambda reply=reply: self._handle_update_reply(reply))
 
@@ -1005,7 +1018,7 @@ class VirtualPortDialog(QDialog):
         self.create_button.setEnabled(setupc is not None and not problems and self.pending_ports is None)
         if setupc is None:
             self.driver_status.setText(self._t("vp_not_found"))
-            self.driver_status.setStyleSheet("color: #9a4f00;")
+            set_status(self.driver_status, "warning")
             return
         self.setupc_edit.setText(str(setupc))
         output = ""
@@ -1023,7 +1036,7 @@ class VirtualPortDialog(QDialog):
                 f"{problem.instance_id}: {problem.code or '?'} {problem.symbol}".rstrip() for problem in problems
             )
             self.driver_status.setText(message)
-            self.driver_status.setStyleSheet("color: #a12b1f; font-weight: 600;")
+            set_status(self.driver_status, "error")
             self.pair_output.setPlainText(f"{details}\n\n{output}".strip())
             self.refresh_callback()
             return
@@ -1031,19 +1044,19 @@ class VirtualPortDialog(QDialog):
         if unassigned:
             self.create_button.setEnabled(False)
             self.driver_status.setText(self._t("vp_unassigned", count=unassigned))
-            self.driver_status.setStyleSheet("color: #9a4f00; font-weight: 600;")
+            set_status(self.driver_status, "warning")
             self.pair_output.setPlainText(output)
             self.refresh_callback()
             return
         wrong_class = sorted(non_ports_class_names(output))
         if wrong_class:
             self.driver_status.setText(self._t("vp_wrong_class", ports=", ".join(wrong_class)))
-            self.driver_status.setStyleSheet("color: #9a4f00; font-weight: 600;")
+            set_status(self.driver_status, "warning")
             self.pair_output.setPlainText(output)
             self.refresh_callback()
             return
         self.driver_status.setText(self._t("vp_found", path=setupc))
-        self.driver_status.setStyleSheet("color: #176b70; font-weight: 600;")
+        set_status(self.driver_status, "success")
         self.pair_output.setPlainText(output)
         self.refresh_callback()
 
@@ -1100,7 +1113,7 @@ class VirtualPortDialog(QDialog):
         self.pending_checks = 0
         self.create_button.setEnabled(False)
         self.driver_status.setText(self._t("vp_creating", port_a=port_a, port_b=port_b))
-        self.driver_status.setStyleSheet("color: #176b70; font-weight: 600;")
+        set_status(self.driver_status, "success")
         QTimer.singleShot(1500, self._verify_created_pair)
 
     def _verify_created_pair(self) -> None:
@@ -1138,8 +1151,10 @@ class VirtualPortDialog(QDialog):
 
 
 class SerialConsole(QMainWindow):
-    def __init__(self) -> None:
+    def __init__(self, settings: QSettings | None = None) -> None:
         super().__init__()
+        self.settings = settings if settings is not None else QSettings("10walnut", "SerialProtocolAssistant")
+        self.dark_theme = self.settings.value("appearance/theme", "dark") != "light"
         self.protocol: dict[str, Any] | None = None
         self.protocol_path: Path | None = None
         self.serial_port: serial.SerialBase | None = None
@@ -1186,6 +1201,8 @@ class SerialConsole(QMainWindow):
         file_row = QHBoxLayout()
         self.protocol_label = QLabel()
         self.protocol_label.setObjectName("protocolTitle")
+        self.protocol_label.setWordWrap(True)
+        self.protocol_label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.load_button = QPushButton()
         self.load_button.clicked.connect(self._choose_protocol)
         self.language_combo = QComboBox()
@@ -1199,7 +1216,12 @@ class SerialConsole(QMainWindow):
         self.about_button.setFixedSize(34, 34)
         self.about_button.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MessageBoxInformation))
         self.about_button.clicked.connect(self._show_about)
+        self.theme_switch = ThemeSwitch()
+        self.theme_switch.setObjectName("themeSwitch")
+        self.theme_switch.setChecked(self.dark_theme)
+        self.theme_switch.toggled.connect(self._toggle_theme)
         file_row.addWidget(self.protocol_label, 1)
+        file_row.addWidget(self.theme_switch)
         file_row.addWidget(self.about_button)
         file_row.addWidget(self.language_combo)
         file_row.addWidget(self.load_button)
@@ -1333,6 +1355,7 @@ class SerialConsole(QMainWindow):
         self.log_table.selectionModel().selectionChanged.connect(self._show_selected_log_details)
         self.log_table.verticalScrollBar().rangeChanged.connect(self._follow_log_scroll_range)
         log_header = self.log_table.horizontalHeader()
+        log_header.setMinimumSectionSize(80)
         log_header.setSectionResizeMode(0, QHeaderView.ResizeMode.Fixed)
         log_header.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         log_header.setSectionResizeMode(2, QHeaderView.ResizeMode.Fixed)
@@ -1396,6 +1419,10 @@ class SerialConsole(QMainWindow):
 
     def _retranslate_ui(self) -> None:
         self.setWindowTitle(self._t("title"))
+        self.theme_switch.setText(self._t("dark_theme"))
+        self.theme_switch.setToolTip(self._t("theme_tooltip"))
+        self.theme_switch.setAccessibleName(self._t("dark_theme"))
+        self.theme_switch.updateGeometry()
         self.about_button.setToolTip(self._t("about_tooltip"))
         self.load_button.setText(self._t("load_protocol"))
         self.settings_group.setTitle(self._t("connection"))
@@ -1497,31 +1524,19 @@ class SerialConsole(QMainWindow):
         self.command_table.setFont(mono)
         self.log_table.setFont(mono)
         self.decoded_table.setFont(mono)
-        self.setStyleSheet(
-            """
-            QMainWindow, QWidget { background: #f5f7f8; color: #1d262d; font-size: 13px; }
-            QGroupBox { background: #ffffff; border: 1px solid #cfd7dc; border-radius: 6px;
-                        margin-top: 12px; padding-top: 10px; font-weight: 600; }
-            QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px; }
-            QLabel#protocolTitle { font-size: 18px; font-weight: 700; color: #172126; }
-            QLabel#aboutName { font-size: 20px; font-weight: 700; color: #172126; }
-            QLabel#sectionTitle { font-weight: 700; color: #26343a; }
-            QPushButton { min-height: 30px; padding: 0 12px; background: #ffffff;
-                          border: 1px solid #aebbc2; border-radius: 5px; }
-            QPushButton:hover { background: #eef4f4; border-color: #608087; }
-            QPushButton:disabled { color: #8b969c; background: #edf0f1; }
-            QPushButton#primaryButton { color: #ffffff; background: #176b70; border-color: #176b70; font-weight: 600; }
-            QPushButton#primaryButton:hover { background: #10585d; }
-            QComboBox, QSpinBox, QDoubleSpinBox, QLineEdit { min-height: 28px; background: #ffffff;
-                                            border: 1px solid #b9c4ca; border-radius: 4px; padding: 0 6px; }
-            QTableWidget { background: #ffffff; alternate-background-color: #f2f6f6;
-                           border: 1px solid #cfd7dc; gridline-color: #dce3e6; }
-            QHeaderView::section { background: #e7ecee; color: #26343a; padding: 7px;
-                                   border: 0; border-right: 1px solid #ccd5d9; font-weight: 600; }
-            QTableWidget::item:selected { background: #cfe4e4; color: #101719; }
-            QStatusBar { background: #e7ecee; }
-            """
-        )
+        apply_theme(QApplication.instance(), self.dark_theme)
+        self.log_model.refresh_colors()
+        # Recolor existing explanations without decoding again or changing history selection.
+        for row in range(self.decoded_table.rowCount()):
+            item = self.decoded_table.item(row, 0)
+            if item is not None:
+                item.setForeground(direction_color(item.text()))
+
+    def _toggle_theme(self, dark: bool) -> None:
+        self.dark_theme = dark
+        self._apply_style()
+        self.settings.setValue("appearance/theme", "dark" if dark else "light")
+        self.settings.sync()
 
     def _choose_protocol(self) -> None:
         start_dir = str(self.protocol_path.parent if self.protocol_path else ROOT)
@@ -1659,7 +1674,7 @@ class SerialConsole(QMainWindow):
             self.pending_rx_frames.clear()
             self.connect_button.setText(self._t("close"))
             self.connection_label.setText(self._t("opened"))
-            self.connection_label.setStyleSheet("color: #176b70; font-weight: 700;")
+            set_status(self.connection_label, "success")
             self.transport_combo.setEnabled(False)
             self.role_combo.setEnabled(False)
             self._sync_transport_ui()
@@ -1683,7 +1698,7 @@ class SerialConsole(QMainWindow):
         self.follow_scroll_timer.stop()
         self.connect_button.setText(self._t("open"))
         self.connection_label.setText(self._t("closed"))
-        self.connection_label.setStyleSheet("")
+        set_status(self.connection_label)
         self.transport_combo.setEnabled(True)
         self.role_combo.setEnabled(True)
         self._sync_transport_ui()
@@ -2103,7 +2118,7 @@ class SerialConsole(QMainWindow):
                     item = QTableWidgetItem(str(value))
                     item.setToolTip(str(value))
                     if column == 0:
-                        item.setForeground(Qt.GlobalColor.darkGreen if value == "RX" else Qt.GlobalColor.darkBlue)
+                        item.setForeground(direction_color(value))
                     self.decoded_table.setItem(row, column, item)
         finally:
             self.decoded_table.setUpdatesEnabled(True)
@@ -2134,16 +2149,25 @@ def main() -> int:
     if "--self-test" not in sys.argv and relaunch_as_admin():
         return 0
     app = QApplication(sys.argv)
-    app.setApplicationName("Serial Protocol Tester")
+    app.setApplicationName("Serial Protocol Assistant")
     app.setApplicationVersion(APP_VERSION)
     app.setOrganizationName("10walnut")
     app.setWindowIcon(QIcon(str(LOGO_PATH)))
-    window = SerialConsole()
     if "--self-test" in sys.argv:
-        if window.command_table.rowCount() == 0 or window.decoded_table.columnCount() != 8:
-            return 2
-        window.close()
+        with tempfile.TemporaryDirectory(prefix="serial-assistant-selftest-") as directory:
+            settings = QSettings(str(Path(directory) / "settings.ini"), QSettings.Format.IniFormat)
+            window = SerialConsole(settings=settings)
+            if window.command_table.rowCount() == 0 or not window.theme_switch.isChecked():
+                return 2
+            window.theme_switch.setChecked(False)
+            app.processEvents()
+            if app.property("darkTheme") or window.decoded_table.columnCount() != 8:
+                return 3
+            window.theme_switch.setChecked(True)
+            app.processEvents()
+            window.close()
         return 0
+    window = SerialConsole()
     window.show()
     return app.exec()
 

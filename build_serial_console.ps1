@@ -26,7 +26,7 @@ $WorkRoot = Join-Path $BuildRoot "pyinstaller-work"
 $StagingRoot = Join-Path $BuildRoot ("dist-staging-{0}" -f [guid]::NewGuid().ToString("N"))
 $LogDir = Join-Path $RepoRoot "logs"
 $LogPath = Join-Path $LogDir ("build-{0}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
-$AppName = "SerialProtocolTester"
+$AppName = "SerialProtocolAssistant"
 $TranscriptStarted = $false
 $OriginalPath = $env:PATH
 
@@ -86,7 +86,7 @@ try {
     }
     catch { Write-Warning "Could not start transcript logging: $($_.Exception.Message)" }
 
-    Write-Host "Build Serial Protocol Tester" -ForegroundColor Cyan
+    Write-Host "Build Serial Protocol Assistant" -ForegroundColor Cyan
     foreach ($RequiredPath in @($AppPath, $SamplePath, $RequirementsPath, $AssetsPath, $LogoPath, $IconGeneratorPath)) {
         if (-not (Test-Path -LiteralPath $RequiredPath)) { throw "Required file is missing: $RequiredPath" }
     }

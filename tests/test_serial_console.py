@@ -145,7 +145,7 @@ class SerialConsoleUiTests(unittest.TestCase):
         window.language_combo.setCurrentIndex(spanish_index)
         self.app.processEvents()
         self.assertEqual(window.language, "es")
-        self.assertEqual(window.windowTitle(), "Probador de protocolos serie")
+        self.assertEqual(window.windowTitle(), "Asistente de protocolos serie")
         self.assertEqual(window.load_button.text(), "Cargar protocolo")
         window.close()
 

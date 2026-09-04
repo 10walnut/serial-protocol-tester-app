@@ -87,7 +87,7 @@ try {
         Write-Warning "Could not start transcript logging: $($_.Exception.Message)"
     }
 
-    Write-Host "Serial Protocol Tester" -ForegroundColor Cyan
+    Write-Host "Serial Protocol Assistant" -ForegroundColor Cyan
     Write-Host "Workspace: $RepoRoot"
 
     if (-not (Test-Path -LiteralPath $AppPath)) {
