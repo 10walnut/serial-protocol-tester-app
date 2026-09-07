@@ -2,7 +2,9 @@ param(
     [switch]$SkipInstall,
     [switch]$ResetVenv,
     [switch]$OneDir,
-    [string]$PythonPath = ""
+    [string]$PythonPath = "",
+    [ValidateSet("zh", "en")]
+    [string]$Language = "zh"
 )
 
 Set-StrictMode -Version 2.0
@@ -12,6 +14,7 @@ $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $AppDir = Join-Path $RepoRoot "app"
 $AppPath = Join-Path $AppDir "serial_console.py"
 $SamplePath = Join-Path $AppDir "sample_protocol.json"
+$EnglishSamplePath = Join-Path $AppDir "sample_protocol.en.json"
 $AssetsPath = Join-Path $AppDir "assets"
 $LogoPath = Join-Path $AssetsPath "serial-protocol-tester-logo.png"
 $IconPath = Join-Path $AssetsPath "serial-protocol-tester-logo.ico"
@@ -26,7 +29,8 @@ $WorkRoot = Join-Path $BuildRoot "pyinstaller-work"
 $StagingRoot = Join-Path $BuildRoot ("dist-staging-{0}" -f [guid]::NewGuid().ToString("N"))
 $LogDir = Join-Path $RepoRoot "logs"
 $LogPath = Join-Path $LogDir ("build-{0}.log" -f (Get-Date -Format "yyyyMMdd-HHmmss"))
-$AppName = "SerialProtocolAssistant"
+$AppName = if ($Language -eq "en") { "SerialProtocolAssistant-EN" } else { "SerialProtocolAssistant-ZH-CN" }
+$ReleaseDefaultsPath = Join-Path $StagingRoot "release-defaults.json"
 $TranscriptStarted = $false
 $OriginalPath = $env:PATH
 
@@ -87,7 +91,7 @@ try {
     catch { Write-Warning "Could not start transcript logging: $($_.Exception.Message)" }
 
     Write-Host "Build Serial Protocol Assistant" -ForegroundColor Cyan
-    foreach ($RequiredPath in @($AppPath, $SamplePath, $RequirementsPath, $AssetsPath, $LogoPath, $IconGeneratorPath)) {
+    foreach ($RequiredPath in @($AppPath, $SamplePath, $EnglishSamplePath, $RequirementsPath, $AssetsPath, $LogoPath, $IconGeneratorPath)) {
         if (-not (Test-Path -LiteralPath $RequiredPath)) { throw "Required file is missing: $RequiredPath" }
     }
 
@@ -139,6 +143,7 @@ try {
     }
 
     New-Item -ItemType Directory -Force -Path $BuildRoot, $DistRoot, $SpecRoot, $WorkRoot, $StagingRoot | Out-Null
+    @{ language = $Language } | ConvertTo-Json | Set-Content -LiteralPath $ReleaseDefaultsPath -Encoding UTF8
     $ModeArgument = if ($OneDir) { "--onedir" } else { "--onefile" }
     $Separator = if ($env:OS -eq "Windows_NT") { ";" } else { ":" }
     $AddData = "$SamplePath$Separator."
@@ -156,6 +161,8 @@ try {
         "--specpath", $SpecRoot,
         "--collect-submodules", "serial",
         "--add-data", $AddData,
+        "--add-data", "$EnglishSamplePath$Separator.",
+        "--add-data", "$ReleaseDefaultsPath$Separator.",
         "--add-data", $AddAssets,
         $AppPath
     )
@@ -196,7 +203,7 @@ raise SystemExit(0 if count >= 7 else 1)
 
     $env:QT_QPA_PLATFORM = "offscreen"
     $SelfTest = Start-Process -FilePath $ExecutablePath -ArgumentList "--self-test" -WindowStyle Hidden -PassThru
-    if (-not $SelfTest.WaitForExit(30000)) {
+    if (-not $SelfTest.WaitForExit(60000)) {
         $SelfTest.Kill($true)
         throw "Packaged application self-test timed out."
     }
@@ -227,7 +234,13 @@ raise SystemExit(0 if count >= 7 else 1)
             Write-Warning "The standard executable is in use. The new build was saved as: $OutputPath"
         }
     }
-    Write-Host "Build complete: $OutputPath" -ForegroundColor Green
+    if (-not $OneDir -and $Language -eq "zh") {
+        try {
+            Copy-Item -LiteralPath $OutputPath -Destination (Join-Path $DistRoot "SerialProtocolAssistant.exe") -Force -ErrorAction Stop
+        }
+        catch { Write-Warning "Compatibility filename is in use. Use the verified language-specific executable: $OutputPath" }
+    }
+    Write-Host "Build complete ($Language): $OutputPath" -ForegroundColor Green
     exit 0
 }
 catch {

@@ -91,7 +91,7 @@ ROOT = resource_root()
 SAMPLE_PROTOCOL = ROOT / "sample_protocol.json"
 ASSETS_DIR = ROOT / "assets"
 LOGO_PATH = ASSETS_DIR / "serial-protocol-tester-logo.png"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.4.1"
 AUTHOR = "十个核桃 / 10walnut"
 PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-app"
 SKILL_PROJECT_URL = "https://github.com/10walnut/serial-protocol-tester-skill"
@@ -1150,8 +1150,17 @@ class VirtualPortDialog(QDialog):
         QTimer.singleShot(1500, self._verify_created_pair)
 
 
+def release_language() -> str:
+    try:
+        config = json.loads((ROOT / "release-defaults.json").read_text(encoding="utf-8-sig"))
+        language = config.get("language")
+        return language if language in ("zh", "en") else "zh"
+    except (OSError, ValueError, AttributeError):
+        return "zh"
+
+
 class SerialConsole(QMainWindow):
-    def __init__(self, settings: QSettings | None = None) -> None:
+    def __init__(self, settings: QSettings | None = None, default_language: str | None = None) -> None:
         super().__init__()
         self.settings = settings if settings is not None else QSettings("10walnut", "SerialProtocolAssistant")
         self.dark_theme = self.settings.value("appearance/theme", "dark") != "light"
@@ -1169,7 +1178,12 @@ class SerialConsole(QMainWindow):
         self.last_traffic_status_at = 0.0
         self.auto_follow_log = True
         self.details_pending = False
-        self.language = "zh"
+        self.edition_language = default_language or release_language()
+        if self.edition_language not in ("zh", "en"):
+            self.edition_language = "zh"
+        self.language_setting_key = f"ui/language/{self.edition_language}"
+        preferred = self.settings.value(self.language_setting_key, self.edition_language)
+        self.language = preferred if preferred in dict(LANGUAGE_OPTIONS) else self.edition_language
         self.baudrate_user_edited = False
         self.last_valid_baudrate = 9600
 
@@ -1189,8 +1203,9 @@ class SerialConsole(QMainWindow):
         self.poll_timer.start()
 
         self._refresh_ports()
-        if SAMPLE_PROTOCOL.exists():
-            self._load_protocol_file(SAMPLE_PROTOCOL)
+        sample = ROOT / "sample_protocol.en.json" if self.edition_language == "en" else SAMPLE_PROTOCOL
+        if sample.exists():
+            self._load_protocol_file(sample)
 
     def _build_ui(self) -> None:
         central = QWidget(self)
@@ -1415,6 +1430,8 @@ class SerialConsole(QMainWindow):
         language = self.language_combo.itemData(index)
         if language and language != self.language:
             self.language = language
+            self.settings.setValue(self.language_setting_key, language)
+            self.settings.sync()
             self._retranslate_ui()
 
     def _retranslate_ui(self) -> None:
@@ -2157,6 +2174,8 @@ def main() -> int:
         with tempfile.TemporaryDirectory(prefix="serial-assistant-selftest-") as directory:
             settings = QSettings(str(Path(directory) / "settings.ini"), QSettings.Format.IniFormat)
             window = SerialConsole(settings=settings)
+            if window.language != release_language() or window.language_combo.currentData() != release_language():
+                return 4
             if window.command_table.rowCount() == 0 or not window.theme_switch.isChecked():
                 return 2
             window.theme_switch.setChecked(False)

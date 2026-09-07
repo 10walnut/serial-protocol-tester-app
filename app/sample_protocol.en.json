@@ -1,0 +1,421 @@
+{
+  "schema_version": "serial_protocol.v1",
+  "name": "Temperature controller example",
+  "description": "A Modbus-style example for host/device testing, variable encoding, and field calculations.",
+  "serial": {
+    "defaults": {
+      "baudrate": 9600,
+      "bytesize": 8,
+      "parity": "N",
+      "stopbits": 1,
+      "timeout_ms": 300
+    }
+  },
+  "frames": [
+    {
+      "id": "temperature_stream",
+      "name": "Realtime temperature data",
+      "description": "Transmit every 100 ms after starting realtime mode.",
+      "purpose": "Continuously transmit the current temperature",
+      "repeat_group": "temperature_stream",
+      "match": {
+        "offset": 0,
+        "data": "54 45 4D 50 2C"
+      },
+      "decode": [
+        {
+          "name": "prefix",
+          "label": "Data marker",
+          "purpose": "TEMP identifies a realtime temperature frame",
+          "offset": 0,
+          "length": 5,
+          "type": "ascii"
+        },
+        {
+          "name": "temperature",
+          "label": "Temperature text",
+          "purpose": "Current device temperature as decimal text",
+          "offset": 5,
+          "length": 4,
+          "type": "ascii",
+          "unit": "°C"
+        },
+        {
+          "name": "line_end",
+          "label": "Line ending",
+          "purpose": "Mark the end of a realtime record",
+          "offset": 9,
+          "length": 2,
+          "type": "hex"
+        }
+      ],
+      "simulation": {
+        "encoding": "ascii",
+        "data": "TEMP,25.0\r\n",
+        "decode": [
+          {
+            "name": "prefix",
+            "label": "Data marker",
+            "purpose": "TEMP identifies a realtime temperature frame",
+            "offset": 0,
+            "length": 5,
+            "type": "ascii"
+          },
+          {
+            "name": "temperature",
+            "label": "Temperature text",
+            "purpose": "Current device temperature as decimal text",
+            "offset": 5,
+            "length": 4,
+            "type": "ascii",
+            "unit": "°C"
+          },
+          {
+            "name": "line_end",
+            "label": "Line ending",
+            "purpose": "Mark the end of a realtime record",
+            "offset": 9,
+            "length": 2,
+            "type": "hex"
+          }
+        ]
+      }
+    }
+  ],
+  "commands": [
+    {
+      "id": "read_temperature",
+      "name": "Read temperature",
+      "description": "Read one holding register at 0x0000; each count represents 0.1 degrees Celsius.",
+      "request": {
+        "encoding": "hex",
+        "data": "01 03 00 00 00 01",
+        "checksum": {
+          "algorithm": "modbus_crc16",
+          "append": true,
+          "byte_order": "little"
+        },
+        "decode": [
+          {
+            "name": "slave",
+            "label": "Device address",
+            "purpose": "Identify the destination device",
+            "offset": 0,
+            "length": 1,
+            "type": "uint8"
+          },
+          {
+            "name": "function",
+            "label": "Function code",
+            "purpose": "0x03 reads holding registers",
+            "offset": 1,
+            "length": 1,
+            "type": "hex"
+          },
+          {
+            "name": "register",
+            "label": "Starting register",
+            "purpose": "Read starting at register 0x0000",
+            "offset": 2,
+            "length": 2,
+            "type": "uint16",
+            "byte_order": "big"
+          },
+          {
+            "name": "count",
+            "label": "Register count",
+            "purpose": "Read one 16-bit register",
+            "offset": 4,
+            "length": 2,
+            "type": "uint16",
+            "byte_order": "big"
+          }
+        ]
+      },
+      "response": {
+        "encoding": "hex",
+        "data": "01 03 02 00 FA",
+        "checksum": {
+          "algorithm": "modbus_crc16",
+          "append": true,
+          "byte_order": "little"
+        },
+        "decode": [
+          {
+            "name": "slave",
+            "label": "Device address",
+            "purpose": "Identify the responding device",
+            "offset": 0,
+            "length": 1,
+            "type": "uint8"
+          },
+          {
+            "name": "function",
+            "label": "Function code",
+            "purpose": "Identify a read-holding-register response",
+            "offset": 1,
+            "length": 1,
+            "type": "hex"
+          },
+          {
+            "name": "byte_count",
+            "label": "Data byte count",
+            "purpose": "The following register data occupies two bytes",
+            "offset": 2,
+            "length": 1,
+            "type": "uint8",
+            "unit": "bytes"
+          },
+          {
+            "name": "temperature",
+            "label": "Temperature",
+            "purpose": "Current temperature measured by the device",
+            "offset": 3,
+            "length": 2,
+            "type": "uint16",
+            "byte_order": "big",
+            "scale": 0.1,
+            "unit": "°C"
+          }
+        ]
+      },
+      "auto_reply": true
+    },
+    {
+      "id": "set_run_state",
+      "name": "Set run state",
+      "description": "Enter the run state; encode it into the register value and recalculate the CRC.",
+      "request": {
+        "encoding": "hex",
+        "data": "01 06 00 10 00 00",
+        "variables": [
+          {
+            "name": "run_state",
+            "label": "Run state",
+            "purpose": "Select stopped or running",
+            "type": "integer",
+            "default": 1,
+            "choices": {
+              "0": "Stopped",
+              "1": "Running"
+            }
+          }
+        ],
+        "encode": [
+          {
+            "name": "run_state",
+            "label": "Run state",
+            "purpose": "State value written to register 0x0010",
+            "offset": 4,
+            "length": 2,
+            "type": "uint16",
+            "byte_order": "big",
+            "formula": "run_state",
+            "enum": {
+              "0": "Stopped",
+              "1": "Running"
+            }
+          }
+        ],
+        "decode": [
+          {
+            "name": "slave",
+            "label": "Device address",
+            "purpose": "Identify the destination device",
+            "offset": 0,
+            "length": 1,
+            "type": "uint8"
+          },
+          {
+            "name": "function",
+            "label": "Function code",
+            "purpose": "0x06 writes one holding register",
+            "offset": 1,
+            "length": 1,
+            "type": "hex"
+          },
+          {
+            "name": "register",
+            "label": "Target register",
+            "purpose": "Run-state register 0x0010",
+            "offset": 2,
+            "length": 2,
+            "type": "uint16",
+            "byte_order": "big"
+          }
+        ],
+        "checksum": {
+          "algorithm": "modbus_crc16",
+          "append": true,
+          "byte_order": "little"
+        },
+        "match_mask": "FF FF FF FF 00 00 00 00"
+      },
+      "response": {
+        "encoding": "hex",
+        "data": "01 06 00 10 00 01",
+        "checksum": {
+          "algorithm": "modbus_crc16",
+          "append": true,
+          "byte_order": "little"
+        },
+        "decode": [
+          {
+            "name": "slave",
+            "label": "Device address",
+            "purpose": "Identify the device executing the write",
+            "offset": 0,
+            "length": 1,
+            "type": "uint8"
+          },
+          {
+            "name": "function",
+            "label": "Function code",
+            "purpose": "Identify a write-single-register response",
+            "offset": 1,
+            "length": 1,
+            "type": "hex"
+          },
+          {
+            "name": "register",
+            "label": "Target register",
+            "purpose": "Echo the written register address",
+            "offset": 2,
+            "length": 2,
+            "type": "uint16",
+            "byte_order": "big"
+          },
+          {
+            "name": "run_state",
+            "label": "Run state",
+            "purpose": "Echo the accepted state value",
+            "offset": 4,
+            "length": 2,
+            "type": "uint16",
+            "byte_order": "big",
+            "enum": {
+              "0": "Stopped",
+              "1": "Running"
+            }
+          }
+        ]
+      },
+      "auto_reply": true
+    },
+    {
+      "id": "ascii_status",
+      "name": "Query ASCII status",
+      "description": "Demonstrate line-based text commands.",
+      "baudrate": 115200,
+      "request": {
+        "encoding": "ascii",
+        "data": "STATUS?\r\n",
+        "decode": [
+          {
+            "name": "command_text",
+            "label": "Query text",
+            "purpose": "Request the current device status",
+            "offset": 0,
+            "length": 9,
+            "type": "ascii"
+          }
+        ]
+      },
+      "response": {
+        "encoding": "ascii",
+        "data": "OK,READY\r\n",
+        "decode": [
+          {
+            "name": "status_text",
+            "label": "Status text",
+            "purpose": "Indicate that the device is ready for commands",
+            "offset": 0,
+            "length": 10,
+            "type": "ascii"
+          }
+        ]
+      },
+      "auto_reply": true
+    },
+    {
+      "id": "start_temperature_stream",
+      "name": "Start realtime temperature",
+      "description": "Reply with an acknowledgement, then transmit temperature data every 100 ms.",
+      "request": {
+        "encoding": "ascii",
+        "data": "STREAM,START\r\n",
+        "decode": [
+          {
+            "name": "command_text",
+            "label": "Start command",
+            "purpose": "Request realtime temperature reporting",
+            "offset": 0,
+            "length": 14,
+            "type": "ascii"
+          }
+        ]
+      },
+      "response": {
+        "encoding": "ascii",
+        "data": "OK,STREAM\r\n",
+        "decode": [
+          {
+            "name": "ack",
+            "label": "Start acknowledgement",
+            "purpose": "Confirm that realtime mode was accepted",
+            "offset": 0,
+            "length": 11,
+            "type": "ascii"
+          }
+        ]
+      },
+      "follow_up_replies": [
+        {
+          "frame_ref": "temperature_stream",
+          "delay_ms": 100,
+          "interval_ms": 100,
+          "repeat_count": 0,
+          "stream_id": "temperature_stream"
+        }
+      ],
+      "auto_reply": true
+    },
+    {
+      "id": "stop_temperature_stream",
+      "name": "Stop realtime temperature",
+      "description": "Stop the temperature stream and acknowledge the stop command.",
+      "request": {
+        "encoding": "ascii",
+        "data": "STREAM,STOP\r\n",
+        "decode": [
+          {
+            "name": "command_text",
+            "label": "Stop command",
+            "purpose": "Request that realtime temperature reporting stops",
+            "offset": 0,
+            "length": 13,
+            "type": "ascii"
+          }
+        ]
+      },
+      "response": {
+        "encoding": "ascii",
+        "data": "OK,STOP\r\n",
+        "decode": [
+          {
+            "name": "ack",
+            "label": "Stop acknowledgement",
+            "purpose": "Confirm that realtime temperature reporting has stopped",
+            "offset": 0,
+            "length": 9,
+            "type": "ascii"
+          }
+        ]
+      },
+      "stop_streams": [
+        "temperature_stream"
+      ],
+      "auto_reply": true
+    }
+  ]
+}

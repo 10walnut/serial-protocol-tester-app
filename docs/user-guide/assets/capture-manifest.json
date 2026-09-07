@@ -1,0 +1,78 @@
+{
+  "captures": [
+    {
+      "file": "interface-zh.png",
+      "source": "Chinese edition; bundled sample; disconnected"
+    },
+    {
+      "file": "skill-install.png",
+      "source": "Actual Skill download and installation page"
+    },
+    {
+      "file": "internal-read.png",
+      "source": "Internal simulation of Read temperature, no physical device"
+    },
+    {
+      "file": "internal-settings.png",
+      "source": "Host plus internal link"
+    },
+    {
+      "file": "read-details.png",
+      "source": "Actual decoded internal response"
+    },
+    {
+      "file": "read-traffic.png",
+      "source": "Actual TX/RX from internal request/response"
+    },
+    {
+      "file": "variable-input.png",
+      "source": "Actual bundled example run-state choices"
+    },
+    {
+      "file": "stream-traffic.png",
+      "source": "Internal ACK, periodic frames and stop acknowledgement"
+    },
+    {
+      "file": "history-details.png",
+      "source": "Selected historical read-temperature response"
+    },
+    {
+      "file": "host-settings.png",
+      "source": "Configuration example COM3; not opened or hardware tested"
+    },
+    {
+      "file": "device-settings.png",
+      "source": "Configuration example COM10; not opened or pair-created"
+    },
+    {
+      "file": "virtual-ports.png",
+      "source": "Actual read-only driver status; no create/delete action performed"
+    },
+    {
+      "file": "interface-en.png",
+      "source": "English edition and English sample; disconnected"
+    }
+  ],
+  "frames": {
+    "read_temperature": {
+      "request": "01 03 00 00 00 01 84 0A",
+      "response": "01 03 02 00 FA 38 07"
+    },
+    "set_run_state": {
+      "request": "01 06 00 10 00 01 49 CF",
+      "response": "01 06 00 10 00 01 49 CF"
+    },
+    "ascii_status": {
+      "request": "53 54 41 54 55 53 3F 0D 0A",
+      "response": "4F 4B 2C 52 45 41 44 59 0D 0A"
+    },
+    "start_temperature_stream": {
+      "request": "53 54 52 45 41 4D 2C 53 54 41 52 54 0D 0A",
+      "response": "4F 4B 2C 53 54 52 45 41 4D 0D 0A"
+    },
+    "stop_temperature_stream": {
+      "request": "53 54 52 45 41 4D 2C 53 54 4F 50 0D 0A",
+      "response": "4F 4B 2C 53 54 4F 50 0D 0A"
+    }
+  }
+}

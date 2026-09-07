@@ -1,0 +1,80 @@
+[
+  {
+    "id": "01-download",
+    "width": 1600,
+    "height": 1200,
+    "errors": []
+  },
+  {
+    "id": "02-interface",
+    "width": 1600,
+    "height": 1200,
+    "errors": []
+  },
+  {
+    "id": "03-skill-install",
+    "width": 1600,
+    "height": 1200,
+    "errors": []
+  },
+  {
+    "id": "04-convert-protocol",
+    "width": 1600,
+    "height": 1200,
+    "errors": []
+  },
+  {
+    "id": "05-internal-test",
+    "width": 1600,
+    "height": 1200,
+    "errors": []
+  },
+  {
+    "id": "06-variables",
+    "width": 1600,
+    "height": 1200,
+    "errors": []
+  },
+  {
+    "id": "07-com0com-install",
+    "width": 1600,
+    "height": 1200,
+    "errors": []
+  },
+  {
+    "id": "08-create-pair",
+    "width": 1600,
+    "height": 1200,
+    "errors": []
+  },
+  {
+    "id": "09-verify-pair",
+    "width": 1600,
+    "height": 1200,
+    "errors": []
+  },
+  {
+    "id": "10-host-mode",
+    "width": 1600,
+    "height": 1200,
+    "errors": []
+  },
+  {
+    "id": "11-device-mode",
+    "width": 1600,
+    "height": 1200,
+    "errors": []
+  },
+  {
+    "id": "12-streams",
+    "width": 1600,
+    "height": 1200,
+    "errors": []
+  },
+  {
+    "id": "13-decode-history",
+    "width": 1600,
+    "height": 1200,
+    "errors": []
+  }
+]

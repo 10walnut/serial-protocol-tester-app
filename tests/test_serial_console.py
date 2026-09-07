@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import string
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -14,7 +15,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = PROJECT_ROOT / "app"
 sys.path.insert(0, str(APP_ROOT))
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QPoint, QSettings, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -55,6 +56,14 @@ class SerialConsoleUiTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self) -> None:
+        directory = tempfile.TemporaryDirectory()
+        self.addCleanup(directory.cleanup)
+        settings = QSettings(str(Path(directory.name) / "ui.ini"), QSettings.Format.IniFormat)
+        factory = patch("serial_console.QSettings", return_value=settings)
+        factory.start()
+        self.addCleanup(factory.stop)
 
     def test_explicit_increment_and_decrement_buttons(self) -> None:
         frame = {

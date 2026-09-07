@@ -17,6 +17,14 @@ permissions:
 jobs:
   build:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        language: [zh, en]
+        include:
+          - language: zh
+            executable: SerialProtocolAssistant-ZH-CN.exe
+          - language: en
+            executable: SerialProtocolAssistant-EN.exe
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,15 +36,15 @@ jobs:
         run: python -m unittest discover -s tests -p "test_*.py" -v
       - name: Build and run packaged Qt self-test
         shell: powershell
-        run: .\build_serial_console.ps1 -PythonPath python
+        run: .\build_serial_console.ps1 -PythonPath python -Language ${{ matrix.language }}
       - uses: actions/upload-artifact@v4
         with:
-          name: SerialProtocolAssistant-windows-x64
-          path: dist/SerialProtocolAssistant.exe
+          name: SerialProtocolAssistant-windows-x64-${{ matrix.language }}
+          path: dist/${{ matrix.executable }}
           if-no-files-found: error
       - name: Upload verified executable to draft release
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag != '' }}
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "${{ inputs.release_tag }}" dist/SerialProtocolAssistant.exe --clobber
+        run: gh release upload "${{ inputs.release_tag }}" "dist/${{ matrix.executable }}" --clobber
