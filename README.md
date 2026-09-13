@@ -11,7 +11,7 @@
   <a href="https://github.com/10walnut/serial-protocol-tester-app/releases"><img src="https://img.shields.io/github/downloads/10walnut/serial-protocol-tester-app/total?style=flat-square&logo=github" alt="Total downloads"></a>
   <a href="https://github.com/10walnut/serial-protocol-tester-app/releases/latest"><img src="https://img.shields.io/github/v/release/10walnut/serial-protocol-tester-app?style=flat-square" alt="Latest release"></a>
   <a href="https://github.com/10walnut/serial-protocol-tester-app/actions/workflows/build-windows.yml"><img src="https://github.com/10walnut/serial-protocol-tester-app/actions/workflows/build-windows.yml/badge.svg" alt="Windows build"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/github/license/10walnut/serial-protocol-tester-app?style=flat-square" alt="MIT license"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/10walnut/serial-protocol-tester-app?style=flat-square" alt="PolyForm Noncommercial license"></a>
 </p>
 
 <p align="center">
@@ -237,4 +237,14 @@ The build script defaults to the Chinese edition, `dist/SerialProtocolAssistant-
 
 ### Credits
 
-Virtual COM support uses [com0com](https://sourceforge.net/projects/com0com/). Thanks to Vyacheslav Frolov and all contributors for the GPL Windows null-modem driver. This repository links to the official package and does not redistribute the driver. Application code is MIT licensed and maintained by `十个核桃 / 10walnut`.
+Virtual COM support uses [com0com](https://sourceforge.net/projects/com0com/). Thanks to Vyacheslav Frolov and all contributors for the GPL Windows null-modem driver. This repository links to the official package and does not redistribute the driver.
+
+### 许可 / License
+
+本项目源码按照 [PolyForm Noncommercial License 1.0.0](LICENSE) 提供，仅允许非商业用途。个人学习、研究、实验和非商业组织使用请遵守许可证条款；公司业务、收费服务、产品集成、商业交付或其他商业用途，需要事先取得单独的商业授权。可通过 GitHub Issues 联系维护者。
+
+This source code is available under the [PolyForm Noncommercial License 1.0.0](LICENSE) for noncommercial purposes only. Commercial use—including business operations, paid services, product integration, or commercial delivery—requires a separate license from the maintainer. Contact the maintainer through GitHub Issues.
+
+The license change applies to versions released under the new license. Rights already granted for earlier MIT-licensed versions are not retroactively withdrawn.
+
+Maintained by `十个核桃 / 10walnut`.
