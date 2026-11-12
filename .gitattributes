@@ -1,0 +1,3 @@
+# Keep POSIX launch scripts with LF endings so the shebang stays executable
+# on Linux/macOS even when checked out on Windows with core.autocrlf enabled.
+*.sh text eol=lf

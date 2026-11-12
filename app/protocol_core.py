@@ -1084,14 +1084,31 @@ def validate_protocol_data(protocol: Any) -> list[str]:
     return errors
 
 
-def load_protocol(path: str | Path) -> dict[str, Any]:
-    protocol_path = Path(path)
+def read_json_file(
+    path: str | Path,
+    *,
+    encoding: str = "utf-8",
+    label: str = "JSON file",
+) -> Any:
+    """Read and decode a JSON file with one shared error classification.
+
+    Both ``load_protocol`` and the standalone validation CLI use this helper so
+    read failures and syntax errors are reported identically (the CLI keeps its
+    own exit codes and ``ERROR:`` prefix on top).
+    """
+    file_path = Path(path)
     try:
-        protocol = json.loads(protocol_path.read_text(encoding="utf-8"))
+        return json.loads(file_path.read_text(encoding=encoding))
     except OSError as exc:
-        raise ProtocolError(f"cannot read protocol file: {exc}") from exc
+        raise ProtocolError(f"cannot read {label}: {exc}") from exc
     except json.JSONDecodeError as exc:
-        raise ProtocolError(f"invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}") from exc
+        raise ProtocolError(
+            f"invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}"
+        ) from exc
+
+
+def load_protocol(path: str | Path) -> dict[str, Any]:
+    protocol = read_json_file(path, label="protocol file")
     errors = validate_protocol_data(protocol)
     if errors:
         raise ProtocolError("protocol validation failed:\n- " + "\n- ".join(errors))

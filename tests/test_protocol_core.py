@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -20,6 +21,7 @@ from protocol_core import (  # noqa: E402
     load_protocol,
     localized_value,
     modbus_crc16,
+    read_json_file,
     resolve_follow_up_frame,
     split_framed_bytes,
     validate_protocol_data,
@@ -137,6 +139,40 @@ class ProtocolCoreTests(unittest.TestCase):
         del command["follow_up_replies"][0]["stream_id"]
         errors = validate_protocol_data(protocol)
         self.assertTrue(any("stream_id is required" in error for error in errors))
+
+
+class JsonFileReadTests(unittest.TestCase):
+    def setUp(self) -> None:
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.directory = Path(temporary.name)
+
+    def test_reads_json_with_custom_encoding(self) -> None:
+        path = self.directory / "protocol-utf16.json"
+        path.write_text('{"name": "温度"}', encoding="utf-16")
+        self.assertEqual(read_json_file(path, encoding="utf-16"), {"name": "温度"})
+
+    def test_missing_file_reports_label_as_protocol_error(self) -> None:
+        with self.assertRaises(ProtocolError) as caught:
+            read_json_file(self.directory / "missing.json", label="protocol file")
+        self.assertIn("cannot read protocol file", str(caught.exception))
+
+    def test_invalid_json_reports_line_and_column(self) -> None:
+        path = self.directory / "broken.json"
+        path.write_text('{"name": }', encoding="utf-8")
+        with self.assertRaises(ProtocolError) as caught:
+            read_json_file(path)
+        self.assertIn("invalid JSON at line 1, column", str(caught.exception))
+
+    def test_load_protocol_reuses_shared_error_classification(self) -> None:
+        with self.assertRaises(ProtocolError) as caught:
+            load_protocol(self.directory / "missing.json")
+        self.assertIn("cannot read protocol file", str(caught.exception))
+        path = self.directory / "broken.json"
+        path.write_text("not json", encoding="utf-8")
+        with self.assertRaises(ProtocolError) as caught:
+            load_protocol(path)
+        self.assertIn("invalid JSON at line 1, column", str(caught.exception))
 
 
 if __name__ == "__main__":

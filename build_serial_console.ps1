@@ -116,6 +116,7 @@ try {
     if (-not (Test-VenvModule "PySide6")) { $MissingModules += "PySide6" }
     if (-not (Test-VenvModule "serial")) { $MissingModules += "pyserial" }
     if (-not (Test-VenvModule "PyInstaller")) { $MissingModules += "PyInstaller" }
+    if (-not (Test-VenvModule "pefile")) { $MissingModules += "pefile" }
     if ($MissingModules.Count -gt 0) {
         if ($SkipInstall) {
             throw "Missing build dependencies: $($MissingModules -join ', '). Run again without -SkipInstall to install them."
@@ -123,10 +124,10 @@ try {
         Write-Host "Installing build dependencies: $($MissingModules -join ', ')"
         Invoke-Checked $VenvPython @("-m", "pip", "install", "--upgrade", "pip") "pip upgrade"
         Invoke-Checked $VenvPython @("-m", "pip", "install", "-r", $RequirementsPath) "Runtime dependency installation"
-        Invoke-Checked $VenvPython @("-m", "pip", "install", "PyInstaller>=6.10,<7") "PyInstaller installation"
+        Invoke-Checked $VenvPython @("-m", "pip", "install", "PyInstaller>=6.10,<7", "pefile>=2023.2.7") "Build dependency installation"
     }
 
-    foreach ($Module in @("PySide6", "serial", "PyInstaller")) {
+    foreach ($Module in @("PySide6", "serial", "PyInstaller", "pefile")) {
         if (-not (Test-VenvModule $Module)) { throw "Module verification failed after installation: $Module" }
     }
 
@@ -160,6 +161,7 @@ try {
         "--workpath", $WorkRoot,
         "--specpath", $SpecRoot,
         "--collect-submodules", "serial",
+        "--paths", $AppDir,
         "--add-data", $AddData,
         "--add-data", "$EnglishSamplePath$Separator.",
         "--add-data", "$ReleaseDefaultsPath$Separator.",

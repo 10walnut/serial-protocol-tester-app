@@ -52,6 +52,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+# Sibling modules are imported by their top-level names, exactly as before.
+# ``app/__init__.py`` puts this directory on sys.path when the project is
+# imported as an installed package; running this file as a script (source
+# launch, PyInstaller entry) already has it on sys.path. Keeping unconditional
+# absolute imports is important: PyInstaller's static analysis must see them.
 from protocol_core import (
     ProtocolError,
     default_variable_values,
@@ -76,15 +81,48 @@ from virtual_ports import (
     query_com0com_driver_problems,
     virtual_ports_ready,
 )
+from serial_ports import (
+    PortInfo,
+    default_endpoint_placeholder,
+    explain_open_error,
+    is_posix,
+    list_serial_ports,
+    validate_endpoint,
+)
+from virtual_ports_posix import (
+    PosixVirtualPortError,
+    VirtualPortPair,
+    backend_description,
+    create_pair,
+    is_supported as posix_virtual_ports_supported,
+)
 from i18n_extra import EXTRA_UI_TEXT, LANGUAGE_OPTIONS
 from themes import ThemeSwitch, apply_theme, direction_color, set_status
 
 
 def resource_root() -> Path:
+    """Locate packaged resources (sample protocols, assets).
+
+    PyInstaller puts them in ``sys._MEIPASS``. A pip install puts them next to
+    this module as package data; ``importlib.resources`` is a fallback for
+    alternative installers that keep resources outside the module directory.
+    """
     bundled_root = getattr(sys, "_MEIPASS", None)
     if bundled_root:
         return Path(bundled_root)
-    return Path(__file__).resolve().parent
+    module_root = Path(__file__).resolve().parent
+    if (module_root / "sample_protocol.json").is_file():
+        return module_root
+    if __package__:
+        try:
+            from importlib.resources import files
+
+            candidate = Path(str(files(__package__)))
+            if candidate.is_dir():
+                return candidate
+        except (ImportError, TypeError, OSError):
+            pass
+    return module_root
 
 
 ROOT = resource_root()
@@ -145,7 +183,16 @@ def relaunch_as_admin() -> bool:
         working_directory = str(Path(sys.executable).resolve().parent)
     else:
         executable = sys.executable
-        arguments = subprocess.list2cmdline([str(Path(__file__).resolve()), *sys.argv[1:]])
+        if __package__:
+            # Always relaunch through the package's __main__ so console-script
+            # and python -m launches share one module identity.
+            arguments = subprocess.list2cmdline(
+                ["-m", __package__, *sys.argv[1:]]
+            )
+        else:
+            arguments = subprocess.list2cmdline(
+                [str(Path(__file__).resolve()), *sys.argv[1:]]
+            )
         working_directory = str(Path(__file__).resolve().parent)
     result = ctypes.windll.shell32.ShellExecuteW(
         None,
@@ -508,9 +555,66 @@ UI_TEXT = {
 UI_TEXT.update(EXTRA_UI_TEXT)
 
 
+def _format_i18n(text: Any, values: dict[str, Any]) -> Any:
+    """Format a localized template when placeholders were supplied."""
+    return text.format(**values) if isinstance(text, str) and values else text
+
+
 def ui_text(language: str, key: str, **values: Any) -> Any:
     text = UI_TEXT.get(language, UI_TEXT["en"]).get(key, UI_TEXT["en"][key])
-    return text.format(**values) if isinstance(text, str) and values else text
+    return _format_i18n(text, values)
+
+
+# Platform specific strings live outside UI_TEXT on purpose: UI_TEXT is checked
+# by tests for a 1:1 key match across all ten languages, and these messages
+# only apply to Linux/macOS. Untranslated languages fall back to English.
+POSIX_UI_TEXT = {
+    "zh": {
+        "endpoint_required": "请选择串口端点，或输入 /dev/ttyUSB0、/dev/cu.* 或 loop://",
+        "vp_posix_title": "虚拟串口对（Linux / macOS）",
+        "vp_posix_intro": (
+            "Linux 与 macOS 使用系统内置伪终端（PTY）创建一对互联串口，无需 com0com 或 socat。"
+            "创建后把两个路径分别填到本软件与另一个上位机（或本软件的第二个实例）即可联调。"
+            "虚拟串口由本程序持有，点击“释放端口对”或退出软件时会自动清理。"
+        ),
+        "vp_posix_backend": "后端：{backend}",
+        "vp_posix_active": "已创建：{port_a} ↔ {port_b}",
+        "vp_posix_idle": "尚未创建虚拟串口对。",
+        "vp_posix_release": "释放端口对",
+        "vp_posix_error_title": "无法创建虚拟串口",
+        "vp_posix_port_a": "端点 A",
+        "vp_posix_port_b": "端点 B",
+        "vp_posix_unsupported": "当前系统不支持 PTY 虚拟串口。",
+        "vp_posix_locked": "当前串口连接正在使用虚拟端口对，请先断开连接再创建或释放。",
+    },
+    "en": {
+        "endpoint_required": "Select a serial endpoint, or enter /dev/ttyUSB0, /dev/cu.* or loop://",
+        "vp_posix_title": "Virtual serial pair (Linux / macOS)",
+        "vp_posix_intro": (
+            "Linux and macOS use built-in pseudo-terminals (PTY) to create a "
+            "connected serial pair; com0com and socat are not required. Use the "
+            "two paths in this app and another host app (or a second instance). "
+            "The pair is owned by this process and is released with the button "
+            "below or when the application exits."
+        ),
+        "vp_posix_backend": "Backend: {backend}",
+        "vp_posix_active": "Active: {port_a} ↔ {port_b}",
+        "vp_posix_idle": "No virtual serial pair has been created yet.",
+        "vp_posix_release": "Release pair",
+        "vp_posix_error_title": "Could not create virtual ports",
+        "vp_posix_port_a": "Endpoint A",
+        "vp_posix_port_b": "Endpoint B",
+        "vp_posix_unsupported": "PTY virtual serial ports are unavailable on this system.",
+        "vp_posix_locked": "The active connection uses the virtual pair; disconnect before creating or releasing it.",
+    },
+}
+
+
+def posix_ui_text(language: str, key: str, **values: Any) -> Any:
+    table = POSIX_UI_TEXT.get(language, POSIX_UI_TEXT["en"])
+    if key not in table:
+        return ui_text(language, key, **values)
+    return _format_i18n(table[key], values)
 
 
 class TrafficLogModel(QAbstractTableModel):
@@ -1150,6 +1254,124 @@ class VirtualPortDialog(QDialog):
         QTimer.singleShot(1500, self._verify_created_pair)
 
 
+class PosixVirtualPortDialog(QDialog):
+    """Create a PTY backed null-modem pair on Linux/macOS.
+
+    The pair stays alive after the dialog closes; the owning window keeps the
+    reference and releases it on demand or in ``closeEvent``.
+    """
+
+    def __init__(
+        self,
+        language: str,
+        refresh_callback: Any,
+        parent: QWidget | None = None,
+        pair: VirtualPortPair | None = None,
+        locked: bool = False,
+    ) -> None:
+        super().__init__(parent)
+        self.language = language
+        self.refresh_callback = refresh_callback
+        self.pair = pair
+        self.locked = locked
+        self.setWindowTitle(self._t("vp_posix_title"))
+        self.resize(640, 320)
+
+        layout = QVBoxLayout(self)
+        intro = QLabel(self._t("vp_posix_intro"))
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        backend = QLabel(self._t("vp_posix_backend", backend=backend_description()))
+        backend.setWordWrap(True)
+        layout.addWidget(backend)
+
+        form = QFormLayout()
+        self.port_a_edit = QLineEdit()
+        self.port_b_edit = QLineEdit()
+        for edit in (self.port_a_edit, self.port_b_edit):
+            edit.setReadOnly(True)
+            edit.setPlaceholderText(self._t("vp_posix_idle"))
+        form.addRow(self._t("vp_posix_port_a"), self.port_a_edit)
+        form.addRow(self._t("vp_posix_port_b"), self.port_b_edit)
+        layout.addLayout(form)
+
+        self.status_label = QLabel()
+        self.status_label.setWordWrap(True)
+        layout.addWidget(self.status_label)
+
+        buttons = QHBoxLayout()
+        self.create_button = QPushButton(self._t("vp_create"))
+        self.create_button.setObjectName("primaryButton")
+        self.create_button.clicked.connect(self._create_pair)
+        self.release_button = QPushButton(self._t("vp_posix_release"))
+        self.release_button.clicked.connect(self._release_pair)
+        close_button = QPushButton(self._t("vp_close"))
+        close_button.clicked.connect(self.accept)
+        buttons.addWidget(self.create_button)
+        buttons.addWidget(self.release_button)
+        buttons.addStretch(1)
+        buttons.addWidget(close_button)
+        layout.addLayout(buttons)
+
+        self._sync_state()
+
+    def _t(self, key: str, **values: Any) -> Any:
+        return posix_ui_text(self.language, key, **values)
+
+    def _sync_state(self) -> None:
+        pair = self.pair
+        active = pair is not None and pair.active
+        supported = posix_virtual_ports_supported()
+        self.create_button.setEnabled(supported and not self.locked)
+        self.release_button.setEnabled(active and not self.locked)
+        if active and pair is not None:
+            self.port_a_edit.setText(pair.port_a)
+            self.port_b_edit.setText(pair.port_b)
+        if self.locked:
+            # Replacing or releasing a pair that an open connection uses would
+            # leave the app pointing at a dead device. Keep the pair intact.
+            self.status_label.setText(self._t("vp_posix_locked"))
+            set_status(self.status_label, "warning")
+            return
+        if active and pair is not None:
+            self.status_label.setText(
+                self._t("vp_posix_active", port_a=pair.port_a, port_b=pair.port_b)
+            )
+            set_status(self.status_label, "success")
+            return
+        self.pair = None
+        self.port_a_edit.clear()
+        self.port_b_edit.clear()
+        self.status_label.setText(
+            self._t("vp_posix_unsupported") if not supported else self._t("vp_posix_idle")
+        )
+        set_status(self.status_label)
+
+    def _create_pair(self) -> None:
+        if self.locked:
+            return
+        try:
+            pair = create_pair()
+        except (PosixVirtualPortError, OSError) as exc:
+            QMessageBox.critical(self, self._t("vp_posix_error_title"), str(exc))
+            return
+        if self.pair is not None:
+            self.pair.close()
+        self.pair = pair
+        self._sync_state()
+        self.refresh_callback()
+
+    def _release_pair(self) -> None:
+        if self.locked:
+            return
+        if self.pair is not None:
+            self.pair.close()
+        self.pair = None
+        self._sync_state()
+        self.refresh_callback()
+
+
 def release_language() -> str:
     try:
         config = json.loads((ROOT / "release-defaults.json").read_text(encoding="utf-8-sig"))
@@ -1167,6 +1389,7 @@ class SerialConsole(QMainWindow):
         self.protocol: dict[str, Any] | None = None
         self.protocol_path: Path | None = None
         self.serial_port: serial.SerialBase | None = None
+        self.virtual_pair: VirtualPortPair | None = None
         self.connected = False
         self.last_command: dict[str, Any] | None = None
         self.log_entries: list[dict[str, Any]] = []
@@ -1267,7 +1490,7 @@ class SerialConsole(QMainWindow):
         self.port_combo = QComboBox()
         self.port_combo.setEditable(True)
         self.port_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        self.port_combo.setPlaceholderText("COM3 or loop://")
+        self.port_combo.setPlaceholderText(default_endpoint_placeholder())
         self.refresh_button = QPushButton()
         self.refresh_button.clicked.connect(self._refresh_ports)
         self.virtual_ports_button = QPushButton()
@@ -1491,9 +1714,29 @@ class SerialConsole(QMainWindow):
         self._sync_role_ui()
 
     def _show_virtual_ports(self) -> None:
-        dialog = VirtualPortDialog(self.language, self._refresh_ports, self)
-        dialog.exec()
+        if is_posix():
+            locked = bool(self.connected and self.virtual_pair is not None)
+            dialog = PosixVirtualPortDialog(
+                self.language, self._refresh_ports, self, self.virtual_pair, locked
+            )
+            dialog.exec()
+            self._replace_virtual_pair(dialog.pair)
+        else:
+            dialog = VirtualPortDialog(self.language, self._refresh_ports, self)
+            dialog.exec()
         self._refresh_ports()
+
+    def _replace_virtual_pair(self, pair: VirtualPortPair | None) -> None:
+        old_pair = self.virtual_pair
+        if old_pair is not None and old_pair is not pair:
+            endpoint = self.port_combo.currentText().strip()
+            if self.connected and endpoint in old_pair.endpoints():
+                self._close_connection()
+            old_pair.close()
+        self.virtual_pair = pair
+
+    def _release_virtual_pair(self) -> None:
+        self._replace_virtual_pair(None)
 
     def _show_about(self) -> None:
         AboutDialog(self.language, self).exec()
@@ -1646,9 +1889,21 @@ class SerialConsole(QMainWindow):
         current = self.port_combo.currentText() if hasattr(self, "port_combo") else ""
         if not hasattr(self, "port_combo"):
             return
-        ports = [port.device for port in list_ports.comports()]
+        ports = list_serial_ports()
+        if self.virtual_pair is not None and self.virtual_pair.active:
+            known = {info.device for info in ports}
+            virtual = [
+                PortInfo(device, backend_description())
+                for device in self.virtual_pair.endpoints()
+                if device not in known
+            ]
+            ports = virtual + ports
         self.port_combo.clear()
-        self.port_combo.addItems(ports)
+        for info in ports:
+            self.port_combo.addItem(info.device)
+            self.port_combo.setItemData(
+                self.port_combo.count() - 1, info.label, Qt.ItemDataRole.ToolTipRole
+            )
         if current:
             index = self.port_combo.findText(current)
             if index >= 0:
@@ -1672,11 +1927,17 @@ class SerialConsole(QMainWindow):
             QMessageBox.warning(self, self._t("no_protocol_title"), self._t("no_protocol_message"))
             return
         transport = self.transport_combo.currentData()
+        endpoint = ""
         try:
             if transport == "serial":
-                endpoint = self.port_combo.currentText().strip()
-                if not endpoint:
-                    raise ValueError(self._t("endpoint_required"))
+                raw_endpoint = self.port_combo.currentText().strip()
+                if not raw_endpoint:
+                    raise ValueError(
+                        posix_ui_text(self.language, "endpoint_required")
+                        if is_posix()
+                        else self._t("endpoint_required")
+                    )
+                endpoint = validate_endpoint(raw_endpoint)
                 self.serial_port = serial.serial_for_url(
                     endpoint,
                     baudrate=self._current_baudrate(),
@@ -1698,7 +1959,12 @@ class SerialConsole(QMainWindow):
             endpoint_name = self._t("internal_name") if transport == "internal" else self.port_combo.currentText()
             self.statusBar().showMessage(self._t("connected", endpoint=endpoint_name))
         except (serial.SerialException, ValueError, OSError) as exc:
-            QMessageBox.critical(self, self._t("connection_failed"), str(exc))
+            message = (
+                explain_open_error(endpoint, exc, self.language)
+                if endpoint
+                else str(exc)
+            )
+            QMessageBox.critical(self, self._t("connection_failed"), message)
             self.statusBar().showMessage(self._t("connection_failed_status", error=exc))
 
     def _close_connection(self) -> None:
@@ -1706,7 +1972,7 @@ class SerialConsole(QMainWindow):
         if self.serial_port is not None:
             try:
                 self.serial_port.close()
-            except serial.SerialException:
+            except (serial.SerialException, OSError):
                 pass
         self.serial_port = None
         self.connected = False
@@ -2159,6 +2425,7 @@ class SerialConsole(QMainWindow):
 
     def closeEvent(self, event: Any) -> None:
         self._close_connection()
+        self._release_virtual_pair()
         event.accept()
 
 

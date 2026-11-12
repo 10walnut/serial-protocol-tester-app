@@ -30,8 +30,14 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
+          cache: pip
+          cache-dependency-path: app/requirements.txt
       - name: Install test dependencies
-        run: python -m pip install -r app/requirements.txt
+        # Build-only tools (PyInstaller, pefile) are installed in app/.venv by
+        # build_serial_console.ps1, not in this test interpreter.
+        run: |
+          python -m pip install -r app/requirements.txt
+          python -m pip check
       - name: Run protocol tests
         run: python -m unittest discover -s tests -p "test_*.py" -v
       - name: Build and run packaged Qt self-test
