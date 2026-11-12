@@ -1,0 +1,90 @@
+name: Cross-platform tests and package
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install Qt runtime libraries (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon-x11-0 libxcb-cursor0
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m pip check
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -p "test_*.py" -v
+      - name: Run application self-test
+        run: python -m serial_protocol_assistant --self-test
+
+  package:
+    name: Build wheel and sdist
+    runs-on: ubuntu-latest
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Build distributions
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m build
+      - name: Verify wheel contents
+        run: |
+          python - <<'PY'
+          import glob, zipfile
+          wheel = glob.glob("dist/*.whl")[0]
+          names = set(zipfile.ZipFile(wheel).namelist())
+          required = {
+              "serial_protocol_assistant/__init__.py",
+              "serial_protocol_assistant/__main__.py",
+              "serial_protocol_assistant/serial_ports.py",
+              "serial_protocol_assistant/virtual_ports_posix.py",
+              "serial_protocol_assistant/sample_protocol.json",
+              "serial_protocol_assistant/sample_protocol.en.json",
+          }
+          missing = required - names
+          assert not missing, f"missing from wheel: {missing}"
+          assert any(n.startswith("serial_protocol_assistant/assets/") for n in names)
+          print(f"wheel OK: {len(names)} entries")
+          PY
+      - name: Smoke test the wheel in a clean virtual environment
+        run: |
+          python -m venv /tmp/spa-smoke
+          /tmp/spa-smoke/bin/pip install dist/*.whl
+          /tmp/spa-smoke/bin/pip check
+          /tmp/spa-smoke/bin/serial-protocol-assistant --self-test
+          /tmp/spa-smoke/bin/python -m serial_protocol_assistant --self-test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/*
+          if-no-files-found: error

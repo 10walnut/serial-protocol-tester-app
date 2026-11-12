@@ -90,3 +90,15 @@ Compare expected and actual bytes before drawing conclusions: incorrect TX sugge
 Screenshots show actual application widgets. Traffic was generated with the internal simulator. Host/device COM settings are disconnected configuration examples. The installer flow and expected Device Manager layout are explicitly labelled diagrams. This guide was not produced by installing drivers or creating new COM pairs on the author's machine.
 
 Driver references: [official files and release notes](https://sourceforge.net/projects/com0com/files/com0com/3.0.0.0/), [com0com project](https://com0com.sourceforge.net/), and the installed project's `readme.txt` documentation of Ports-class naming. Thanks to Vyacheslav Frolov and the com0com contributors. com0com is GPL-licensed; this repository links to the official driver rather than redistributing it.
+
+## Cross-platform supplement
+
+This 13-step guide uses the Windows EXE and com0com. The following are the equivalents on Linux/macOS and for pip installs.
+
+- **Install**: `python -m pip install .` (or `python -m pip install serial-protocol-assistant` once published), then run `serial-protocol-assistant`, `serial-protocol-assistant-gui` on Windows, or `python -m serial_protocol_assistant`. On Linux/macOS, `bash start_serial_console.sh` creates a local virtual environment and installs the project in editable mode. Python 3.10+ with PySide6-Essentials and pyserial is required. Only Windows launches request UAC elevation; Linux/macOS need no administrator rights.
+- **Virtual ports**: Use the built-in PTY pair instead of com0com. The **Virtual ports** dialog creates two linked endpoints such as `/tmp/serial-pair-xxx/ttyA` and `/tmp/serial-pair-xxx/ttyB`; open one here and the other in the host application. No driver, `setupc.exe`, Device Manager check, or elevation is needed. The pair is released with the button or on exit.
+- **Physical endpoints**: Use `COMx` on Windows, `/dev/ttyUSB0` or `/dev/ttyACM0` on Linux, and prefer `/dev/cu.usbserial-*` on macOS. Endpoints must be absolute paths; bare names such as `ttyUSB0` are rejected. On Linux add your user to `dialout` (or `uucp`) and log in again; on macOS install the CH340 / CP210x / FTDI driver and allow it in System Settings → Privacy & Security. Use `loop://` for an in-process loopback without hardware.
+- **Language**: The pip distribution has no `release-defaults.json`, so it starts in Chinese; switch with the in-app language selector. The EXE editions default to the downloaded language.
+- **Self-test**: `serial-protocol-assistant --self-test` or `python -m serial_protocol_assistant --self-test` verifies an installation without interaction.
+
+The full endpoint, permission and driver checklist is in the [root README](https://github.com/10walnut/serial-protocol-tester-app#pip-安装--install-with-pip).

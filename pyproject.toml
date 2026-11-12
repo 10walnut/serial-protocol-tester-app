@@ -1,0 +1,71 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "serial-protocol-assistant"
+version = "1.4.1"
+description = "Turn vendor protocol documents into a serial test console (PySide6 + pyserial)"
+readme = { file = "README.md", content-type = "text/markdown" }
+requires-python = ">=3.10"
+# PolyForm Noncommercial is not an SPDX license; LicenseRef is the PEP 639
+# expression for a custom license file.
+license = "LicenseRef-PolyForm-Noncommercial-1.0.0"
+license-files = ["LICENSE"]
+authors = [{ name = "十个核桃 / 10walnut" }]
+keywords = ["serial", "pyserial", "pyside6", "qt", "protocol", "modbus", "testing"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Communications",
+    "Topic :: Software Development :: Testing",
+]
+dependencies = [
+    "PySide6-Essentials>=6.7,<7",
+    "pyserial>=3.5,<4",
+]
+
+[project.optional-dependencies]
+build = ["PyInstaller>=6.10,<7", "pefile>=2023.2.7"]
+# The repository uses unittest (not pytest); CI consumes this extra for builds.
+dev = ["build>=1.2"]
+
+[project.urls]
+Homepage = "https://github.com/10walnut/serial-protocol-tester-app"
+Source = "https://github.com/10walnut/serial-protocol-tester-app"
+Issues = "https://github.com/10walnut/serial-protocol-tester-app/issues"
+
+[project.scripts]
+serial-protocol-assistant = "serial_protocol_assistant.serial_console:main"
+
+[project.gui-scripts]
+serial-protocol-assistant-gui = "serial_protocol_assistant.serial_console:main"
+
+# The source tree keeps the historical ``app/`` directory (used by the Windows
+# PyInstaller scripts), while the installed distribution uses a unique package
+# name so it cannot clash with other ``app`` / ``themes`` modules.
+[tool.setuptools]
+packages = ["serial_protocol_assistant"]
+package-dir = { "serial_protocol_assistant" = "app" }
+# Assets are shipped through explicit package-data below, not via sdist
+# discovery, so setuptools does not treat app/assets as an importable package.
+include-package-data = false
+
+[tool.setuptools.package-data]
+serial_protocol_assistant = [
+    "sample_protocol.json",
+    "sample_protocol.en.json",
+    "assets/*.png",
+    "assets/*.jpg",
+    "assets/*.ico",
+]

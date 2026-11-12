@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -11,7 +10,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 APP_ROOT = PROJECT_ROOT / "app"
 sys.path.insert(0, str(APP_ROOT))
 
-from protocol_core import validate_protocol_data  # noqa: E402
+from protocol_core import (  # noqa: E402
+    ProtocolError,
+    read_json_file,
+    validate_protocol_data,
+)
 
 
 def main() -> int:
@@ -20,15 +23,9 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        data = json.loads(args.protocol.read_text(encoding="utf-8"))
-    except OSError as exc:
-        print(f"ERROR: cannot read {args.protocol}: {exc}", file=sys.stderr)
-        return 2
-    except json.JSONDecodeError as exc:
-        print(
-            f"ERROR: invalid JSON at line {exc.lineno}, column {exc.colno}: {exc.msg}",
-            file=sys.stderr,
-        )
+        data = read_json_file(args.protocol, label=str(args.protocol))
+    except ProtocolError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
     errors = validate_protocol_data(data)

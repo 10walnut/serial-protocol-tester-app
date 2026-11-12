@@ -4,6 +4,7 @@ import os
 import string
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -275,17 +276,23 @@ class SerialConsoleUiTests(unittest.TestCase):
 
         window._receive_internal_response(start)
         self.assertEqual(window.log_entries[-1]["data"], b"OK,STREAM\r\n")
-        QTest.qWait(240)
-        streamed = [entry for entry in window.log_entries if entry["data"] == b"TEMP,25.0\r\n"]
-        self.assertGreaterEqual(len(streamed), 2)
+
+        def streamed_count() -> int:
+            return sum(
+                1 for entry in window.log_entries if entry["data"] == b"TEMP,25.0\r\n"
+            )
+
+        # A fixed 240ms wait is flaky on loaded CI runners; poll until the two
+        # expected periodic frames arrive, with a hard deadline.
+        deadline = time.monotonic() + 1.5
+        while streamed_count() < 2 and time.monotonic() < deadline:
+            QTest.qWait(40)
+        self.assertGreaterEqual(streamed_count(), 2)
 
         window._receive_internal_response(stop)
-        count_after_stop = len([entry for entry in window.log_entries if entry["data"] == b"TEMP,25.0\r\n"])
+        count_after_stop = streamed_count()
         QTest.qWait(220)
-        self.assertEqual(
-            len([entry for entry in window.log_entries if entry["data"] == b"TEMP,25.0\r\n"]),
-            count_after_stop,
-        )
+        self.assertEqual(streamed_count(), count_after_stop)
         window.close()
 
     def test_about_dialog_loads_brand_and_donation_assets(self) -> None:

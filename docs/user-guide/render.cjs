@@ -38,7 +38,22 @@ async function main() {
   const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=1600"><title>${guide.title}</title><style>${styles}</style></head><body><header><h1>${guide.title}</h1><p>13 步图解 · 下载、安装、协议导入、COM 配对与上下位机测试</p><nav>${guide.pages.map(p=>`<a href="#${p.id}">${esc(p.title.split('：')[0])}</a>`).join('')}</nav></header>${guide.pages.map(section).join('')}<div class="sources"><h3>资料与图示说明</h3><p>软件截图来自真实 Qt 控件，收发截图使用内置模拟。COM3、COM10、COM11 为配置示例。驱动安装流程与期望设备列表为明确标注的示意图，本次未安装驱动或创建端口。</p>${guide.sources.map(l=>`<p><a href="${l.url}">${l.label}</a></p>`).join('')}<p>com0com 由 Vyacheslav Frolov 及贡献者开发，按 GPL 分发。本指南引用官方入口，不重新分发驱动。</p></div></body></html>`;
   fs.writeFileSync(path.join(root,'index.html'),html.replace('</style>',`${overrides}</style>`),'utf8');
   const markdown = `# ${guide.title}\n\n适用软件 v${guide.version}。每张图可放大查看；[离线图解](index.html) 与本目录图片一起保存即可浏览。\n\n[中文版下载](https://github.com/10walnut/serial-protocol-tester-app/releases/latest/download/SerialProtocolAssistant-ZH-CN.exe) · [English download](https://github.com/10walnut/serial-protocol-tester-app/releases/latest/download/SerialProtocolAssistant-EN.exe) · [English guide](README.en.md)\n\n` + guide.pages.map(p=>`## ${p.title}\n\n${p.subtitle}\n\n![${p.title}](images/${p.id}.png)\n\n${p.steps.map((s,i)=>`${i+1}. ${s}`).join('\n')}\n\n${p.code?'```text\n'+p.code+'\n```\n\n':''}**预期结果：** ${p.result}\n\n${p.note}\n\n${(p.links||[]).map(l=>`[${l.label}](${l.url})`).join(' · ')}\n`).join('\n') + '\n## 来源与致谢\n\n' + guide.sources.map(l=>`- [${l.label}](${l.url})`).join('\n') + '\n\n软件截图为真实界面；报文截图使用内部模拟。安装流程和期望设备列表为示意，不代表本机已完成 com0com 创建与双向实测。感谢 Vyacheslav Frolov 及 com0com 贡献者。驱动遵循 GPL，本项目仅链接官方包。\n';
-  fs.writeFileSync(path.join(root,'README.md'),markdown + '\n## 配套示例文件\n\n离线包内包含 [中文示例 JSON](examples/sample_protocol.zh.json) 和 [English sample JSON](examples/sample_protocol.en.json)。可通过“加载协议”重新载入对应示例。\n','utf8');
+  const crossPlatformNotes = [
+    '',
+    '## 跨平台补充 / Cross-platform supplement',
+    '',
+    '本 13 步图解以 Windows EXE 与 com0com 为例。使用 Linux / macOS，或通过 pip 安装时，请按以下等价步骤操作。This guide uses the Windows EXE and com0com; use the equivalents below on Linux/macOS or with a pip install.',
+    '',
+    '- **安装 / Install**：`python -m pip install .`（发布后可用 `python -m pip install serial-protocol-assistant`），启动 `serial-protocol-assistant` 或 `python -m serial_protocol_assistant`；Linux / macOS 也可运行 `bash start_serial_console.sh`。要求 Python 3.10+，运行时依赖 PySide6-Essentials 与 pyserial。仅 Windows 平台启动会请求 UAC 提权，Linux / macOS 不需要管理员权限。',
+    '- **虚拟串口 / Virtual ports**：Linux / macOS 使用系统内置 PTY，无需 com0com 驱动、setupc.exe 或设备管理器；点击「虚拟串口」生成 `/tmp/serial-pair-xxx/ttyA` ↔ `ttyB` 两个互连端点，分别填给本软件与另一台上位机。点「释放端口对」或退出程序时自动清理。On Linux/macOS the dialog builds a linked PTY pair with no driver and no administrator rights.',
+    '- **真实端点 / Physical endpoints**：Windows 用 `COMx`；Linux 用 `/dev/ttyUSB0`、`/dev/ttyACM0`；macOS 优先 `/dev/cu.usbserial-*`。端点必须是完整绝对路径，裸名如 `ttyUSB0` 会被拒绝。Linux 用户加入 `dialout`（或 `uucp`）组后重新登录；macOS 安装 CH340 / CP210x / FTDI 驱动并在「系统设置 → 隐私与安全性」中允许。',
+    '- **语言 / Language**：pip 包不含 `release-defaults.json`，首次启动默认中文，可在界面右上角切换；图解中的 EXE 默认语言由下载版本决定。',
+    '- **自检 / Self-test**：`serial-protocol-assistant --self-test` 或 `python -m serial_protocol_assistant --self-test` 可在无需交互的情况下验证安装。',
+    '',
+    '端点枚举、权限与驱动排障的完整清单见仓库根 [README](https://github.com/10walnut/serial-protocol-tester-app#pip-安装--install-with-pip)。See the root README for the full endpoint, permission and driver checklist.',
+    ''
+  ].join('\n');
+  fs.writeFileSync(path.join(root,'README.md'),markdown + '\n## 配套示例文件\n\n离线包内包含 [中文示例 JSON](examples/sample_protocol.zh.json) 和 [English sample JSON](examples/sample_protocol.en.json)。可通过“加载协议”重新载入对应示例。\n' + crossPlatformNotes,'utf8');
   const browser = await chromium.launch({headless:true,executablePath:process.env.BROWSER_EXE || 'C:/Program Files/Google/Chrome/Application/chrome.exe'});
   try {
     const page = await browser.newPage({viewport:{width:1700,height:1300},deviceScaleFactor:1});

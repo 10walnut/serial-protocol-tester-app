@@ -297,3 +297,15 @@ RX：01 03 02 00 FA 38 07
 ## 配套示例文件
 
 离线包内包含 [中文示例 JSON](examples/sample_protocol.zh.json) 和 [English sample JSON](examples/sample_protocol.en.json)。可通过“加载协议”重新载入对应示例。
+
+## 跨平台补充 / Cross-platform supplement
+
+本 13 步图解以 Windows EXE 与 com0com 为例。使用 Linux / macOS，或通过 pip 安装时，请按以下等价步骤操作。This guide uses the Windows EXE and com0com; use the equivalents below on Linux/macOS or with a pip install.
+
+- **安装 / Install**：`python -m pip install .`（发布后可用 `python -m pip install serial-protocol-assistant`），启动 `serial-protocol-assistant` 或 `python -m serial_protocol_assistant`；Linux / macOS 也可运行 `bash start_serial_console.sh`。要求 Python 3.10+，运行时依赖 PySide6-Essentials 与 pyserial。仅 Windows 平台启动会请求 UAC 提权，Linux / macOS 不需要管理员权限。
+- **虚拟串口 / Virtual ports**：Linux / macOS 使用系统内置 PTY，无需 com0com 驱动、setupc.exe 或设备管理器；点击「虚拟串口」生成 `/tmp/serial-pair-xxx/ttyA` ↔ `ttyB` 两个互连端点，分别填给本软件与另一台上位机。点「释放端口对」或退出程序时自动清理。On Linux/macOS the dialog builds a linked PTY pair with no driver and no administrator rights.
+- **真实端点 / Physical endpoints**：Windows 用 `COMx`；Linux 用 `/dev/ttyUSB0`、`/dev/ttyACM0`；macOS 优先 `/dev/cu.usbserial-*`。端点必须是完整绝对路径，裸名如 `ttyUSB0` 会被拒绝。Linux 用户加入 `dialout`（或 `uucp`）组后重新登录；macOS 安装 CH340 / CP210x / FTDI 驱动并在「系统设置 → 隐私与安全性」中允许。
+- **语言 / Language**：pip 包不含 `release-defaults.json`，首次启动默认中文，可在界面右上角切换；图解中的 EXE 默认语言由下载版本决定。
+- **自检 / Self-test**：`serial-protocol-assistant --self-test` 或 `python -m serial_protocol_assistant --self-test` 可在无需交互的情况下验证安装。
+
+端点枚举、权限与驱动排障的完整清单见仓库根 [README](https://github.com/10walnut/serial-protocol-tester-app#pip-安装--install-with-pip)。See the root README for the full endpoint, permission and driver checklist.

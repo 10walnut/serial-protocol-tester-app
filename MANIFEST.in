@@ -1,0 +1,9 @@
+include README.md LICENSE
+include app/requirements.txt
+include app/sample_protocol.json app/sample_protocol.en.json
+include start_serial_console.sh start_serial_console.ps1 start_serial_console.bat
+include build_serial_console.ps1 build_serial_console.bat
+recursive-include app/assets *.png *.jpg *.ico
+recursive-include tests *.py
+recursive-include scripts *.py
+recursive-include .github/workflows *.yml

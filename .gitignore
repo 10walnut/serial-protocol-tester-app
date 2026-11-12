@@ -5,5 +5,9 @@ build/
 dist/
 logs/
 *.spec
+*.egg-info/
+.pytest_cache/
+.pyinstaller-test/
+node_modules/
 .idea/
 .vscode/

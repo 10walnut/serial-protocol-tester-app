@@ -59,3 +59,7 @@ class ReleaseLanguageTests(unittest.TestCase):
                 self.assertEqual(release_language(), "zh")
         with patch("serial_console.Path.read_text", side_effect=FileNotFoundError):
             self.assertEqual(release_language(), "zh")
+
+
+if __name__ == "__main__":
+    unittest.main()
